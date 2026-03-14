@@ -17,15 +17,19 @@ export default function APRCalculator() {
       return;
     }
 
-    const intervals = mo;
     const perInterval = (amt * percent) / 100;
-    const totalRelease = perInterval * intervals;
+    const totalRelease = perInterval * mo;
     const apr = (percent * 12).toFixed(2);
+    const completionDate = new Date();
+    completionDate.setMonth(completionDate.getMonth() + mo);
 
     setResult({
       perMonth: perInterval.toFixed(2),
       total: totalRelease.toFixed(2),
       apr,
+      completionDate: completionDate.toLocaleDateString("en-GB", {
+        day: "2-digit", month: "short", year: "numeric"
+      }),
     });
   };
 
@@ -43,7 +47,7 @@ export default function APRCalculator() {
         🧮 Staking Calculator
       </h3>
       <p className="text-gray-400 text-sm mb-5">
-        Apna staking return calculate karo
+        Estimate your staking returns before committing
       </p>
 
       {/* Amount */}
@@ -122,15 +126,22 @@ export default function APRCalculator() {
             </span>
           </div>
 
-          <div className="flex justify-between items-center border-t border-gray-700 pt-3">
+          <div className="flex justify-between items-center">
             <span className="text-gray-400 text-sm">Effective APR</span>
             <span className="text-blue-400 font-bold text-lg">
               {result.apr}%
             </span>
           </div>
 
+          <div className="flex justify-between items-center border-t border-gray-700 pt-3">
+            <span className="text-gray-400 text-sm">Est. Completion</span>
+            <span className="text-purple-400 font-bold">
+              {result.completionDate}
+            </span>
+          </div>
+
           <p className="text-gray-500 text-xs text-center pt-1">
-            * Principal-only return — koi extra reward nahi
+            * Principal-only return — no extra rewards included
           </p>
 
         </div>

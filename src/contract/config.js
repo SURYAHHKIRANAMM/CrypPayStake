@@ -26,6 +26,13 @@ export const RPC_URL = "https://data-seed-prebsc-1-s1.binance.org:8545";
 
 /*
 -----------------------------------
+Admin Wallet
+-----------------------------------
+*/
+export const ADMIN_WALLET = "0x4fd0dbfC59B4D1257aA1fA3EC0981C6Bee1be572";
+
+/*
+-----------------------------------
 Contract Addresses
 -----------------------------------
 */
