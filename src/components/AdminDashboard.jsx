@@ -9,6 +9,13 @@ export default function AdminDashboard({ account, signer, provider }) {
   const {
     fetchPlans,
     fetchStats,
+    fetchTVLValue,
+    fetchTokenPrice,
+    fetchTotalDistributed,
+    fetchTotalWithdrawn,
+    fetchTotalStakedInPlan,
+    fetchPlanPaused,
+    fetchPlanEmergency,
   } = useContract(signer, provider);
 
   // ─── State ───────────────────────────────────────────
@@ -20,6 +27,15 @@ export default function AdminDashboard({ account, signer, provider }) {
   });
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("plans");
+
+  // Analytics State
+  const [tokenPrice, setTokenPrice] = useState("0");
+  const [tvlUSD, setTvlUSD] = useState("0");
+  const [totalDistributed, setTotalDistributed] = useState("0");
+  const [totalWithdrawn, setTotalWithdrawn] = useState("0");
+  const [planStakedAmounts, setPlanStakedAmounts] = useState({});
+  const [planPausedStatus, setPlanPausedStatus] = useState({});
+  const [planEmergencyStatus, setPlanEmergencyStatus] = useState({});
 
   // Create Plan Form
   const [planForm, setPlanForm] = useState({
@@ -54,13 +70,36 @@ export default function AdminDashboard({ account, signer, provider }) {
   // ─── Load Data ────────────────────────────────────────
   async function loadData() {
     try {
-      const [p, s] = await Promise.all([fetchPlans(), fetchStats()]);
+      const [p, s, price, tvl, distributed, withdrawn] = await Promise.all([
+        fetchPlans(),
+        fetchStats(),
+        fetchTokenPrice(),
+        fetchTVLValue(),
+        fetchTotalDistributed(),
+        fetchTotalWithdrawn(),
+      ]);
       setPlans(p);
       setStats(s);
+      setTokenPrice(price);
+      setTvlUSD(tvl);
+      setTotalDistributed(distributed);
+      setTotalWithdrawn(withdrawn);
 
       const reader = getReader();
       const em = await reader.emergencyMode();
       setEmergencyMode(em);
+
+      const stakedAmounts = {};
+      const pausedStatuses = {};
+      const emergencyStatuses = {};
+      for (let i = 0; i < p.length; i++) {
+        stakedAmounts[i] = await fetchTotalStakedInPlan(i);
+        pausedStatuses[i] = await fetchPlanPaused(i);
+        emergencyStatuses[i] = await fetchPlanEmergency(i);
+      }
+      setPlanStakedAmounts(stakedAmounts);
+      setPlanPausedStatus(pausedStatuses);
+      setPlanEmergencyStatus(emergencyStatuses);
     } catch (err) {
       console.error("Load failed:", err);
     }
@@ -68,6 +107,12 @@ export default function AdminDashboard({ account, signer, provider }) {
 
   useEffect(() => {
     if (provider) loadData();
+  }, [provider]);
+
+  useEffect(() => {
+    if (!provider) return;
+    const interval = setInterval(loadData, 30000);
+    return () => clearInterval(interval);
   }, [provider]);
 
   // ─── Helpers ─────────────────────────────────────────
@@ -246,14 +291,14 @@ export default function AdminDashboard({ account, signer, provider }) {
 
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-yellow-400">🔧 Admin Dashboard</h1>
+        <h1 className="text-3xl font-bold text-yellow-400">📊 Dashboard</h1>
         <p className="text-gray-400 text-sm mt-1">
           {account?.slice(0,6)}...{account?.slice(-4)}
         </p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-3 gap-4 mb-4">
         <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
           <p className="text-gray-400 text-xs">Total Staked</p>
           <p className="text-yellow-400 text-xl font-bold mt-1">
@@ -274,6 +319,34 @@ export default function AdminDashboard({ account, signer, provider }) {
         </div>
       </div>
 
+      {/* Extended Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-gray-800 rounded-xl p-4 border border-yellow-500/20">
+          <p className="text-gray-400 text-xs">CRP Token Price</p>
+          <p className="text-yellow-400 text-lg font-bold mt-1">
+            ${Number(tokenPrice) > 0 ? Number(tokenPrice).toFixed(6) : "N/A"}
+          </p>
+        </div>
+        <div className="bg-gray-800 rounded-xl p-4 border border-yellow-500/20">
+          <p className="text-gray-400 text-xs">TVL (USD)</p>
+          <p className="text-yellow-400 text-lg font-bold mt-1">
+            ${Number(tvlUSD) > 0 ? Number(tvlUSD).toLocaleString() : "N/A"}
+          </p>
+        </div>
+        <div className="bg-gray-800 rounded-xl p-4 border border-yellow-500/20">
+          <p className="text-gray-400 text-xs">Total Distributed</p>
+          <p className="text-green-400 text-lg font-bold mt-1">
+            {Number(totalDistributed).toLocaleString()} CRP
+          </p>
+        </div>
+        <div className="bg-gray-800 rounded-xl p-4 border border-yellow-500/20">
+          <p className="text-gray-400 text-xs">Total Withdrawn</p>
+          <p className="text-orange-400 text-lg font-bold mt-1">
+            {Number(totalWithdrawn).toLocaleString()} CRP
+          </p>
+        </div>
+      </div>
+
       {/* Emergency Mode Banner */}
       {emergencyMode && (
         <div className="bg-red-900/50 border border-red-500 rounded-xl p-4 mb-6 flex justify-between items-center">
@@ -288,7 +361,7 @@ export default function AdminDashboard({ account, signer, provider }) {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-gray-700 pb-2">
-        {["plans", "create", "settings", "emergency"].map((tab) => (
+        {["plans", "create", "analytics", "settings", "emergency"].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -300,6 +373,7 @@ export default function AdminDashboard({ account, signer, provider }) {
           >
             {tab === "plans" && "📋 Plans"}
             {tab === "create" && "➕ Create Plan"}
+            {tab === "analytics" && "📊 Analytics"}
             {tab === "settings" && "⚙️ Settings"}
             {tab === "emergency" && "🚨 Emergency"}
           </button>
@@ -313,10 +387,7 @@ export default function AdminDashboard({ account, signer, provider }) {
             <p className="text-gray-400 text-center py-10">Koi plan nahi mila</p>
           ) : (
             plans.map((plan, index) => (
-              <div
-                key={index}
-                className="bg-gray-800 border border-gray-700 rounded-xl p-5"
-              >
+              <div key={index} className="bg-gray-800 border border-gray-700 rounded-xl p-5">
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <span className="text-yellow-400 font-bold text-lg">
@@ -326,12 +397,22 @@ export default function AdminDashboard({ account, signer, provider }) {
                       <span className={`text-xs px-2 py-0.5 rounded-full ${plan.active ? "bg-green-900 text-green-400" : "bg-red-900 text-red-400"}`}>
                         {plan.active ? "Active" : "Disabled"}
                       </span>
+                      {planPausedStatus[index] && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-orange-900 text-orange-400">
+                          Paused ⏸️
+                        </span>
+                      )}
+                      {planEmergencyStatus[index] && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-900 text-red-400">
+                          Emergency 🚨
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-2">
                     <AdminButton
                       onClick={() => handleTogglePause(index)}
-                      label="Pause/Resume"
+                      label={planPausedStatus[index] ? "Resume" : "Pause"}
                       color="orange"
                     />
                     <AdminButton
@@ -348,8 +429,7 @@ export default function AdminDashboard({ account, signer, provider }) {
                     )}
                   </div>
                 </div>
-
-                <div className="grid grid-cols-4 gap-3 text-sm">
+                <div className="grid grid-cols-5 gap-3 text-sm">
                   <div>
                     <p className="text-gray-400 text-xs">Lock Period</p>
                     <p className="text-white">{(Number(plan.lockPeriod) / 2592000).toFixed(0)} months</p>
@@ -366,6 +446,10 @@ export default function AdminDashboard({ account, signer, provider }) {
                     <p className="text-gray-400 text-xs">Min Stake</p>
                     <p className="text-white">{formatAmount(plan.minTokenAmount)} CRP</p>
                   </div>
+                  <div>
+                    <p className="text-gray-400 text-xs">Total Staked</p>
+                    <p className="text-yellow-400 font-bold">{Number(planStakedAmounts[index] || 0).toLocaleString()} CRP</p>
+                  </div>
                 </div>
               </div>
             ))
@@ -378,167 +462,164 @@ export default function AdminDashboard({ account, signer, provider }) {
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-xl">
           <h2 className="text-white font-bold text-lg mb-5">➕ New Staking Plan</h2>
           <div className="space-y-4">
-            <InputField
-              label="Plan Name"
-              value={planForm.name}
-              onChange={(v) => setPlanForm({ ...planForm, name: v })}
-              placeholder="e.g. CrypPay Stake 12M"
-            />
-            <InputField
-              label="Lock Period (seconds)"
-              value={planForm.lockPeriod}
-              onChange={(v) => setPlanForm({ ...planForm, lockPeriod: v })}
-              placeholder="e.g. 31104000 (12 months)"
-              type="number"
-            />
-            <InputField
-              label="Release Percent per Interval"
-              value={planForm.releasePercent}
-              onChange={(v) => setPlanForm({ ...planForm, releasePercent: v })}
-              placeholder="e.g. 8 (for 12 intervals)"
-              type="number"
-            />
-            <InputField
-              label="Claim Interval (seconds)"
-              value={planForm.claimInterval}
-              onChange={(v) => setPlanForm({ ...planForm, claimInterval: v })}
-              placeholder="e.g. 2592000 (30 days)"
-              type="number"
-            />
-            <InputField
-              label="Min Token Amount (CRP)"
-              value={planForm.minTokenAmount}
-              onChange={(v) => setPlanForm({ ...planForm, minTokenAmount: v })}
-              placeholder="e.g. 15000"
-              type="number"
-            />
-            <AdminButton
-              onClick={handleCreatePlan}
-              label="Create Plan"
-              color="yellow"
-            />
+            <InputField label="Plan Name" value={planForm.name} onChange={(v) => setPlanForm({ ...planForm, name: v })} placeholder="e.g. CrypPay Stake 12M" />
+            <InputField label="Lock Period (seconds)" value={planForm.lockPeriod} onChange={(v) => setPlanForm({ ...planForm, lockPeriod: v })} placeholder="e.g. 31104000 (12 months)" type="number" />
+            <InputField label="Release Percent per Interval" value={planForm.releasePercent} onChange={(v) => setPlanForm({ ...planForm, releasePercent: v })} placeholder="e.g. 8 (for 12 intervals)" type="number" />
+            <InputField label="Claim Interval (seconds)" value={planForm.claimInterval} onChange={(v) => setPlanForm({ ...planForm, claimInterval: v })} placeholder="e.g. 2592000 (30 days)" type="number" />
+            <InputField label="Min Token Amount (CRP)" value={planForm.minTokenAmount} onChange={(v) => setPlanForm({ ...planForm, minTokenAmount: v })} placeholder="e.g. 15000" type="number" />
+            <AdminButton onClick={handleCreatePlan} label="Create Plan" color="yellow" />
           </div>
+        </div>
+      )}
+
+      {/* ── TAB: ANALYTICS ── */}
+      {activeTab === "analytics" && (
+        <div className="space-y-6">
+
+          {/* Price & TVL */}
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <h2 className="text-white font-bold text-lg mb-5">💰 Price & TVL</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-gray-400 text-xs">CRP Token Price</p>
+                <p className="text-yellow-400 font-bold text-lg">
+                  ${Number(tokenPrice) > 0 ? Number(tokenPrice).toFixed(6) : "N/A"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-xs">TVL (USD)</p>
+                <p className="text-yellow-400 font-bold text-lg">
+                  ${Number(tvlUSD) > 0 ? Number(tvlUSD).toLocaleString() : "N/A"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-xs">Max TVL Cap</p>
+                <p className="text-blue-400 font-bold text-lg">
+                  {Number(stats.maxTVL) === 0 ? "No Cap" : `${Number(stats.maxTVL).toLocaleString()} CRP`}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Per-Plan Stats */}
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <h2 className="text-white font-bold text-lg mb-5">📋 Per-Plan Breakdown</h2>
+            {plans.length === 0 ? (
+              <p className="text-gray-400 text-center py-6">Koi plan nahi mila</p>
+            ) : (
+              <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden">
+                <div className="grid grid-cols-6 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
+                  <span>#</span>
+                  <span>Plan Name</span>
+                  <span>Total Staked</span>
+                  <span>Status</span>
+                  <span>Paused</span>
+                  <span>Emergency</span>
+                </div>
+                {plans.map((plan, index) => (
+                  <div key={index} className="grid grid-cols-6 gap-2 px-5 py-3 text-sm border-b border-gray-700/50 items-center">
+                    <span className="text-gray-500 text-xs">{index}</span>
+                    <span className="text-yellow-400 font-semibold text-xs truncate">{plan.name}</span>
+                    <span className="text-white font-bold text-xs">{Number(planStakedAmounts[index] || 0).toLocaleString()} CRP</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${plan.active ? "bg-green-900 text-green-400" : "bg-red-900 text-red-400"}`}>
+                      {plan.active ? "Active" : "Disabled"}
+                    </span>
+                    <span className={`text-xs font-semibold ${planPausedStatus[index] ? "text-orange-400" : "text-gray-500"}`}>
+                      {planPausedStatus[index] ? "Yes ⏸️" : "No"}
+                    </span>
+                    <span className={`text-xs font-semibold ${planEmergencyStatus[index] ? "text-red-400" : "text-gray-500"}`}>
+                      {planEmergencyStatus[index] ? "Yes 🚨" : "No"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Protocol Health */}
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <h2 className="text-white font-bold text-lg mb-5">🛡️ Protocol Health</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-gray-400 text-xs">Emergency Mode</p>
+                <p className={`font-bold text-lg ${emergencyMode ? "text-red-400" : "text-green-400"}`}>
+                  {emergencyMode ? "🔴 ACTIVE" : "🟢 INACTIVE"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-xs">Active Plans</p>
+                <p className="text-green-400 font-bold text-lg">
+                  {plans.filter(p => p.active).length} / {plans.length}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-xs">Paused Plans</p>
+                <p className="text-orange-400 font-bold text-lg">
+                  {Object.values(planPausedStatus).filter(v => v).length}
+                </p>
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
 
       {/* ── TAB: SETTINGS ── */}
       {activeTab === "settings" && (
         <div className="grid grid-cols-2 gap-6">
-
-          {/* Max TVL */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4">📊 Set Max TVL</h3>
             <div className="space-y-3">
-              <InputField
-                label="Max TVL (CRP) — 0 = No Cap"
-                value={maxTVL}
-                onChange={setMaxTVL}
-                placeholder="e.g. 1000000"
-                type="number"
-              />
+              <InputField label="Max TVL (CRP) — 0 = No Cap" value={maxTVL} onChange={setMaxTVL} placeholder="e.g. 1000000" type="number" />
               <AdminButton onClick={handleSetMaxTVL} label="Update MaxTVL" color="blue" />
             </div>
           </div>
-
-          {/* Min Token Amount */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4">💰 Set Min Token Amount</h3>
             <div className="space-y-3">
-              <InputField
-                label="Plan ID"
-                value={minAmountPlanId}
-                onChange={setMinAmountPlanId}
-                placeholder="e.g. 0"
-                type="number"
-              />
-              <InputField
-                label="New Min Amount (CRP)"
-                value={minAmount}
-                onChange={setMinAmount}
-                placeholder="e.g. 10000"
-                type="number"
-              />
+              <InputField label="Plan ID" value={minAmountPlanId} onChange={setMinAmountPlanId} placeholder="e.g. 0" type="number" />
+              <InputField label="New Min Amount (CRP)" value={minAmount} onChange={setMinAmount} placeholder="e.g. 10000" type="number" />
               <AdminButton onClick={handleSetMinAmount} label="Update Min Amount" color="blue" />
             </div>
           </div>
-
-          {/* Pair Address */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4">🔄 Set Pair Address (TWAP)</h3>
             <div className="space-y-3">
-              <InputField
-                label="PancakeSwap Pair Address"
-                value={pairAddress}
-                onChange={setPairAddress}
-                placeholder="0x..."
-              />
+              <InputField label="PancakeSwap Pair Address" value={pairAddress} onChange={setPairAddress} placeholder="0x..." />
               <AdminButton onClick={handleSetPairAddress} label="Update Pair" color="blue" />
             </div>
           </div>
-
-          {/* Price Feed */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
             <h3 className="text-white font-semibold mb-4">📡 Set Price Feed (Chainlink)</h3>
             <div className="space-y-3">
-              <InputField
-                label="Chainlink Feed Address"
-                value={priceFeed}
-                onChange={setPriceFeed}
-                placeholder="0x..."
-              />
+              <InputField label="Chainlink Feed Address" value={priceFeed} onChange={setPriceFeed} placeholder="0x..." />
               <AdminButton onClick={handleSetPriceFeed} label="Update Feed" color="blue" />
             </div>
           </div>
-
-          {/* Withdraw Stuck Tokens */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-5 col-span-2">
             <h3 className="text-white font-semibold mb-4">🔧 Withdraw Stuck Tokens</h3>
             <div className="grid grid-cols-2 gap-3">
-              <InputField
-                label="Token Address"
-                value={stuckToken}
-                onChange={setStuckToken}
-                placeholder="0x..."
-              />
-              <InputField
-                label="Amount"
-                value={stuckAmount}
-                onChange={setStuckAmount}
-                placeholder="e.g. 100"
-                type="number"
-              />
+              <InputField label="Token Address" value={stuckToken} onChange={setStuckToken} placeholder="0x..." />
+              <InputField label="Amount" value={stuckAmount} onChange={setStuckAmount} placeholder="e.g. 100" type="number" />
             </div>
             <div className="mt-3">
               <AdminButton onClick={handleWithdrawStuck} label="Withdraw Tokens" color="orange" />
             </div>
           </div>
-
         </div>
       )}
 
       {/* ── TAB: EMERGENCY ── */}
       {activeTab === "emergency" && (
         <div className="max-w-xl space-y-6">
-
-          {/* Global Emergency */}
           <div className="bg-gray-800 border border-red-700 rounded-xl p-6">
             <h3 className="text-red-400 font-bold text-lg mb-2">🚨 Global Emergency Mode</h3>
             <p className="text-gray-400 text-sm mb-4">
               Yeh enable karne se saare users emergency withdraw kar sakte hain.
             </p>
             <div className="flex gap-3">
-              <AdminButton
-                onClick={() => handleSetEmergencyMode(true)}
-                label="Enable Emergency"
-                color="red"
-                disabled={emergencyMode}
-              />
-              <AdminButton
-                onClick={() => handleSetEmergencyMode(false)}
-                label="Disable Emergency"
-                color="green"
-                disabled={!emergencyMode}
-              />
+              <AdminButton onClick={() => handleSetEmergencyMode(true)} label="Enable Emergency" color="red" disabled={emergencyMode} />
+              <AdminButton onClick={() => handleSetEmergencyMode(false)} label="Disable Emergency" color="green" disabled={!emergencyMode} />
             </div>
             <div className="mt-3">
               <span className={`text-sm font-semibold ${emergencyMode ? "text-red-400" : "text-green-400"}`}>
@@ -546,8 +627,6 @@ export default function AdminDashboard({ account, signer, provider }) {
               </span>
             </div>
           </div>
-
-          {/* Per Plan Emergency */}
           <div className="bg-gray-800 border border-orange-700 rounded-xl p-6">
             <h3 className="text-orange-400 font-bold text-lg mb-2">⚠️ Per-Plan Emergency</h3>
             <p className="text-gray-400 text-sm mb-4">
@@ -556,17 +635,22 @@ export default function AdminDashboard({ account, signer, provider }) {
             <div className="space-y-3">
               {plans.map((plan, index) => (
                 <div key={index} className="flex justify-between items-center bg-gray-700 rounded-lg px-4 py-3">
-                  <span className="text-white text-sm">Plan #{index} — {plan.name}</span>
-                  <AdminButton
-                    onClick={() => handleTogglePlanEmergency(index)}
-                    label="Toggle Emergency"
-                    color="orange"
-                  />
+                  <div>
+                    <span className="text-white text-sm">Plan #{index} — {plan.name}</span>
+                    <div className="flex gap-2 mt-1">
+                      {planPausedStatus[index] && (
+                        <span className="text-xs text-orange-400">⏸️ Paused</span>
+                      )}
+                      {planEmergencyStatus[index] && (
+                        <span className="text-xs text-red-400">🚨 Emergency</span>
+                      )}
+                    </div>
+                  </div>
+                  <AdminButton onClick={() => handleTogglePlanEmergency(index)} label="Toggle Emergency" color="orange" />
                 </div>
               ))}
             </div>
           </div>
-
         </div>
       )}
 

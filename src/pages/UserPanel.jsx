@@ -10,7 +10,7 @@ export default function UserPanel({ account, signer, provider, connectWallet }) 
   const tabs = [
     { id: "home",      label: "🏠 Home" },
     { id: "stake",     label: "💰 Stake" },
-    ...(account ? [{ id: "dashboard", label: "📊 My Stakes" }] : []),
+    ...(account ? [{ id: "dashboard", label: "📊 Dashboard" }] : []),
   ];
 
   return (

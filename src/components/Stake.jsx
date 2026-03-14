@@ -154,7 +154,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
 
       </div>
 
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 justify-center">
+      <div className="flex flex-wrap justify-center gap-6">
 
         {plans.map((plan, i) => {
 
@@ -162,15 +162,20 @@ export default function Stake({ account, signer, provider, connectWallet }) {
 
           const lockMonths = (Number(plan.lockPeriod) / 2592000).toFixed(0);
           const intervalDays = (Number(plan.claimInterval) / 86400).toFixed(0);
+          const releasePercent = Number(plan.releasePercent);
           const minAmt = Number(ethers.formatUnits(plan.minTokenAmount, 18));
           const isSelected = selectedPlan === i;
+
+          const userAmount = Number(amount) || 0;
+          const monthlyReturn = userAmount > 0 ? (userAmount * releasePercent / 100) : 0;
+          const totalReturn = userAmount > 0 ? (monthlyReturn * Number(lockMonths)) : 0;
 
           return (
 
             <div
               key={i}
               onClick={() => setSelectedPlan(i)}
-              className={`bg-gray-800 border rounded-xl p-6 cursor-pointer transition max-w-sm mx-auto ${
+              className={`bg-gray-800 border rounded-xl p-6 cursor-pointer transition w-full sm:w-80 ${
                 isSelected
                   ? "border-yellow-500 shadow-lg shadow-yellow-500/10"
                   : "border-gray-700 hover:border-yellow-500/40"
@@ -199,7 +204,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                 <div className="flex justify-between">
                   <span className="text-gray-400">Monthly Release</span>
                   <span className="text-green-400 font-semibold">
-                    {plan.releasePercent.toString()}% / Month
+                    {releasePercent}% / Month
                   </span>
                 </div>
 
@@ -217,33 +222,48 @@ export default function Stake({ account, signer, provider, connectWallet }) {
 
               </div>
 
-              {account ? (
+              {/* Expected Returns Preview */}
+              {userAmount > 0 && (
+                <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 mb-4">
+                  <p className="text-gray-400 text-xs mb-2 font-semibold">
+                    📊 Expected Returns
+                  </p>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Staking Amount</span>
+                      <span className="text-white font-semibold">
+                        {userAmount.toLocaleString()} CRP
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Monthly Return</span>
+                      <span className="text-green-400 font-semibold">
+                        {monthlyReturn.toLocaleString()} CRP
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
+                      <span className="text-gray-400">Total Return ({lockMonths}mo)</span>
+                      <span className="text-yellow-400 font-bold">
+                        {totalReturn.toLocaleString()} CRP
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
+              {account && (
                 <button
                   disabled={loading || !amount || Number(amount) <= 0}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleStake(i, plan.minTokenAmount);
                   }}
-                  className="w-full bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 text-black font-bold py-2 rounded transition"
+                  className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 disabled:opacity-50 text-black font-bold py-2.5 rounded-full transition shadow-lg shadow-yellow-500/20"
                 >
                   {loadingPlanId === i && loading
                     ? "Processing..."
-                    : `Stake ${amount ? Number(amount).toLocaleString() : ""} CRP`}
+                    : "🚀 Start Stake Now"}
                 </button>
-
-              ) : (
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    connectWallet();
-                  }}
-                  className="w-full bg-gray-600 hover:bg-yellow-500 hover:text-black text-white font-bold py-2 rounded transition"
-                >
-                  Connect Wallet
-                </button>
-
               )}
 
             </div>

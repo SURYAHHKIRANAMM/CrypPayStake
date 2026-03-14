@@ -3,6 +3,9 @@ import hero from "../assets/hero.png";
 
 export default function Home({ connectWallet, account }) {
 
+  const CONTRACT_ADDRESS = "0x413F528863459F95eF87E1d59646A62D7290526c";
+  const TOKEN_ADDRESS = "0x497fd858c8849aaCD308BB668e5fc82E9Ae110a6";
+
   return (
     <div className="max-w-5xl mx-auto text-center">
 
@@ -65,7 +68,7 @@ export default function Home({ connectWallet, account }) {
         </div>
       </motion.div>
 
-      {/* Token Info */}
+      {/* Crypto Coin Information */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -73,12 +76,12 @@ export default function Home({ connectWallet, account }) {
         className="mb-16"
       >
         <h2 className="text-2xl font-bold text-white mb-8">
-          🪙 Token Information
+          🪙 Crypto Coin Information
         </h2>
         <div className="grid md:grid-cols-3 gap-5">
 
           <div className="bg-gray-800 border border-yellow-500/30 rounded-xl p-5">
-            <p className="text-gray-400 text-xs mb-1">Token Name</p>
+            <p className="text-gray-400 text-xs mb-1">Coin Name</p>
             <p className="text-yellow-400 font-bold text-lg">CrypPay</p>
             <p className="text-gray-500 text-xs mt-1">Symbol: CRP</p>
           </div>
@@ -93,6 +96,41 @@ export default function Home({ connectWallet, account }) {
             <p className="text-gray-400 text-xs mb-1">Total Supply</p>
             <p className="text-yellow-400 font-bold text-lg">1,000,000,000</p>
             <p className="text-gray-500 text-xs mt-1">1 Billion CRP</p>
+          </div>
+
+        </div>
+
+        {/* Contract Address Details */}
+        <div className="grid md:grid-cols-2 gap-5 mt-5">
+
+          <div className="bg-gray-800 border border-yellow-500/30 rounded-xl p-5 text-left">
+            <p className="text-gray-400 text-xs mb-1">CRP Token Contract</p>
+            <a
+              href={`https://bscscan.com/token/${TOKEN_ADDRESS}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-yellow-400 font-mono text-xs break-all hover:underline"
+            >
+              {TOKEN_ADDRESS}
+            </a>
+            <p className="text-gray-500 text-xs mt-2">
+              🔗 Click to view on BscScan
+            </p>
+          </div>
+
+          <div className="bg-gray-800 border border-yellow-500/30 rounded-xl p-5 text-left">
+            <p className="text-gray-400 text-xs mb-1">Staking Contract</p>
+            <a
+              href={`https://bscscan.com/address/${CONTRACT_ADDRESS}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-yellow-400 font-mono text-xs break-all hover:underline"
+            >
+              {CONTRACT_ADDRESS}
+            </a>
+            <p className="text-gray-500 text-xs mt-2">
+              🔗 Click to view on BscScan
+            </p>
           </div>
 
         </div>
@@ -130,23 +168,6 @@ export default function Home({ connectWallet, account }) {
           </p>
         </div>
 
-      </motion.div>
-
-      {/* CTA Button */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.5 }}
-        className="mb-10"
-      >
-        {!account && (
-          <button
-            onClick={connectWallet}
-            className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-lg px-10 py-3 rounded-full transition shadow-lg shadow-yellow-500/20"
-          >
-            🚀 Start Staking Now
-          </button>
-        )}
       </motion.div>
 
     </div>
