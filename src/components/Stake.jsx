@@ -17,7 +17,6 @@ export default function Stake({ account, signer, provider, connectWallet }) {
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [showCalculator, setShowCalculator] = useState(false);
 
-  // Load staking plans
   useEffect(() => {
     if (!provider) return;
     const loadPlans = async () => {
@@ -31,7 +30,6 @@ export default function Stake({ account, signer, provider, connectWallet }) {
     loadPlans();
   }, [provider]);
 
-  // Stake tokens
   const handleStake = async (planId, minTokenAmount) => {
 
     if (!account) {
@@ -60,14 +58,12 @@ export default function Stake({ account, signer, provider, connectWallet }) {
       setLoading(true);
       setLoadingPlanId(planId);
 
-      // ✅ Step 1 — Approve
       toast.loading("Step 1/2: Approving tokens...");
       const approveTx = await approveTokens(amount);
       await approveTx.wait();
       toast.dismiss();
       toast.success("Approved! ✅");
 
-      // ✅ Step 2 — Stake
       toast.loading("Step 2/2: Staking tokens...");
       const tx = await stakeTokens(planId, amount);
       await tx.wait();
@@ -98,35 +94,32 @@ export default function Stake({ account, signer, provider, connectWallet }) {
   };
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-6xl mx-auto px-4">
 
-      {/* Header */}
-      <div className="text-center mb-8">
+      <div className="text-center mb-10">
         <h1 className="text-3xl font-bold text-yellow-400 mb-2">
-          💰 Stake Tokens
+          💰 CrypPay Stake
         </h1>
         <p className="text-gray-400 text-sm">
-          Plan select karo — amount enter karo — stake karo
+          Select plan → enter amount → stake CRP tokens securely
         </p>
       </div>
 
-      {/* Balance + Amount Input */}
-      <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-8 max-w-md mx-auto">
+      <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-10 max-w-md mx-auto">
 
-        {/* Balance */}
         {account && (
           <div className="flex justify-between items-center mb-3">
-            <span className="text-gray-400 text-sm">Your Balance</span>
+            <span className="text-gray-400 text-sm">Wallet Balance</span>
             <span className="text-yellow-400 font-semibold text-sm">
               {Number(balance).toLocaleString()} tCRP
             </span>
           </div>
         )}
 
-        {/* Amount Input */}
         <label className="text-gray-400 text-xs block mb-1">
           Amount to Stake (CRP)
         </label>
+
         <div className="flex gap-2">
           <input
             type="number"
@@ -135,6 +128,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
+
           {account && (
             <button
               onClick={() => setAmount(Number(balance).toFixed(0))}
@@ -145,12 +139,11 @@ export default function Stake({ account, signer, provider, connectWallet }) {
           )}
         </div>
 
-        {/* Calculator Toggle */}
         <button
           onClick={() => setShowCalculator(!showCalculator)}
           className="mt-3 text-xs text-yellow-400 hover:underline"
         >
-          🧮 {showCalculator ? "Hide" : "Show"} Staking Calculator
+          🧮 {showCalculator ? "Hide" : "Show"} Calculator
         </button>
 
         {showCalculator && (
@@ -161,8 +154,8 @@ export default function Stake({ account, signer, provider, connectWallet }) {
 
       </div>
 
-      {/* Plans */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 justify-center">
+
         {plans.map((plan, i) => {
 
           if (!plan.active) return null;
@@ -173,52 +166,59 @@ export default function Stake({ account, signer, provider, connectWallet }) {
           const isSelected = selectedPlan === i;
 
           return (
+
             <div
               key={i}
               onClick={() => setSelectedPlan(i)}
-              className={`bg-gray-800 border rounded-xl p-6 cursor-pointer transition ${
+              className={`bg-gray-800 border rounded-xl p-6 cursor-pointer transition max-w-sm mx-auto ${
                 isSelected
                   ? "border-yellow-500 shadow-lg shadow-yellow-500/10"
                   : "border-gray-700 hover:border-yellow-500/40"
               }`}
             >
 
-              {/* Plan Header */}
               <div className="flex justify-between items-start mb-4">
                 <h3 className="text-yellow-400 font-bold text-base leading-tight">
                   {plan.name}
                 </h3>
+
                 <span className="text-xs bg-green-900 text-green-400 px-2 py-0.5 rounded-full ml-2 shrink-0">
                   Active
                 </span>
               </div>
 
-              {/* Plan Details */}
               <div className="space-y-2 text-sm mb-5">
+
                 <div className="flex justify-between">
                   <span className="text-gray-400">Lock Period</span>
-                  <span className="text-white font-semibold">{lockMonths} Months</span>
+                  <span className="text-white font-semibold">
+                    {lockMonths} Months
+                  </span>
                 </div>
+
                 <div className="flex justify-between">
                   <span className="text-gray-400">Monthly Release</span>
                   <span className="text-green-400 font-semibold">
                     {plan.releasePercent.toString()}% / Month
                   </span>
                 </div>
+
                 <div className="flex justify-between">
                   <span className="text-gray-400">Claim Every</span>
                   <span className="text-white">{intervalDays} Days</span>
                 </div>
+
                 <div className="flex justify-between border-t border-gray-700 pt-2 mt-2">
                   <span className="text-gray-400">Min Stake</span>
                   <span className="text-yellow-400 font-semibold">
                     {minAmt.toLocaleString()} CRP
                   </span>
                 </div>
+
               </div>
 
-              {/* Stake Button */}
               {account ? (
+
                 <button
                   disabled={loading || !amount || Number(amount) <= 0}
                   onClick={(e) => {
@@ -231,7 +231,9 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                     ? "Processing..."
                     : `Stake ${amount ? Number(amount).toLocaleString() : ""} CRP`}
                 </button>
+
               ) : (
+
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -241,14 +243,17 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                 >
                   Connect Wallet
                 </button>
+
               )}
 
             </div>
+
           );
+
         })}
+
       </div>
 
-      {/* No Plans */}
       {plans.filter(p => p.active).length === 0 && (
         <div className="text-center py-20 text-gray-400">
           <p className="text-4xl mb-3">📭</p>

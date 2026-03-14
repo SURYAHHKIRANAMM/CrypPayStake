@@ -35,7 +35,11 @@ export default function UserPanel({ account, signer, provider, connectWallet }) 
 
       {/* Tab Content */}
       {activeTab === "home" && (
-        <Home provider={provider} />
+        <Home
+          provider={provider}
+          account={account}
+          connectWallet={connectWallet}
+        />
       )}
 
       {activeTab === "stake" && (

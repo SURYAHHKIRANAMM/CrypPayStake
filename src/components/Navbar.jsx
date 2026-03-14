@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import WalletButton from "./WalletButton";
-import logo from "../assets/logo.png";
 
 export default function Navbar({ provider }) {
 
@@ -12,13 +11,12 @@ export default function Navbar({ provider }) {
       border-b border-gray-700 shadow-lg
     ">
 
-      {/* Logo */}
-      <div className="flex items-center gap-2">
-        <img src={logo} alt="CrypPayStake" className="h-10 w-10" />
+      {/* Logo — sirf text */}
+      <Link to="/">
         <span className="text-xl font-bold text-yellow-400 tracking-wide">
           ⚡ CrypPayStake
         </span>
-      </div>
+      </Link>
 
       {/* Navigation */}
       <div className="flex gap-8 text-gray-300 font-medium">
