@@ -112,7 +112,7 @@ export default function UserDashboard({ account, signer, provider }) {
     runTx(() => withdrawTokens(index), index, "Withdrawing...", "Withdraw failed ❌");
 
   const handleEmergency = (index) => {
-    if (!window.confirm("Emergency withdraw karna hai? Penalty lag sakti hai!")) return;
+    if (!window.confirm("Are you sure you want to emergency withdraw? Penalty may apply!")) return;
     runTx(() => emergencyWithdrawTokens(index), index, "Emergency Withdrawing...", "Emergency withdraw failed ❌");
   };
 
@@ -134,7 +134,7 @@ export default function UserDashboard({ account, signer, provider }) {
   if (!account) {
     return (
       <div className="text-center mt-20 text-yellow-400 text-lg">
-        🔒 Wallet connect karo apna Dashboard dekhne ke liye
+        🔒 Please connect your wallet to view Dashboard
       </div>
     );
   }
@@ -270,8 +270,8 @@ export default function UserDashboard({ account, signer, provider }) {
           {activeStakes.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <p className="text-5xl mb-4">📭</p>
-              <p className="text-lg">Koi active stake nahi mila</p>
-              <p className="text-sm mt-2">Stake tab pe jaake apna pehla stake karo</p>
+              <p className="text-lg">No active stakes found</p>
+              <p className="text-sm mt-2">Go to the Stake tab and create your first stake</p>
             </div>
           ) : (
             <div className="grid md:grid-cols-2 gap-6">
@@ -397,93 +397,128 @@ export default function UserDashboard({ account, signer, provider }) {
           {stakes.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <p className="text-5xl mb-4">📋</p>
-              <p className="text-lg">Koi transaction record nahi mila</p>
-              <p className="text-sm mt-2">Jab aap stake, claim ya withdraw karoge tab yahan dikhega</p>
+              <p className="text-lg">No transaction records found</p>
+              <p className="text-sm mt-2">Your stake, claim and withdraw records will appear here</p>
             </div>
           ) : (
-            <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-
-              {/* Table Header */}
-              <div className="grid grid-cols-7 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
-                <span>#</span>
-                <span>Plan</span>
-                <span>Amount</span>
-                <span>Claimed</span>
-                <span>Start</span>
-                <span>Status</span>
-                <span className="text-right">BscScan</span>
+            <>
+              {/* History Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-gray-800 border border-gray-700 rounded-xl p-3 text-center">
+                  <p className="text-gray-400 text-xs mb-1">Total Stakes</p>
+                  <p className="text-white font-bold">{stakes.length}</p>
+                </div>
+                <div className="bg-gray-800 border border-green-500/20 rounded-xl p-3 text-center">
+                  <p className="text-gray-400 text-xs mb-1">Total Staked</p>
+                  <p className="text-yellow-400 font-bold">{totalUserStaked.toLocaleString()} CRP</p>
+                </div>
+                <div className="bg-gray-800 border border-green-500/20 rounded-xl p-3 text-center">
+                  <p className="text-gray-400 text-xs mb-1">Total Claimed</p>
+                  <p className="text-green-400 font-bold">{totalUserClaimed.toLocaleString()} CRP</p>
+                </div>
+                <div className="bg-gray-800 border border-blue-500/20 rounded-xl p-3 text-center">
+                  <p className="text-gray-400 text-xs mb-1">Remaining</p>
+                  <p className="text-blue-400 font-bold">{totalUserRemaining.toLocaleString()} CRP</p>
+                </div>
               </div>
 
-              {/* Table Rows */}
-              {stakes.map((stake, i) => {
+              {/* History Table */}
+              <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
 
-                const planId = Number(stake.planId);
-                const plan = plans[planId];
-                const planName = plan ? plan.name : `Plan #${planId}`;
-                const stakedAmt = Number(ethers.formatUnits(stake.amount || 0, 18));
-                const claimedAmt = Number(ethers.formatUnits(stake.claimed || 0, 18));
-                const isWithdrawn = stake.withdrawn;
-                const unlocked = isUnlocked(stake);
+                {/* Table Header */}
+                <div className="grid grid-cols-8 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
+                  <span>#</span>
+                  <span>Plan</span>
+                  <span>Staked</span>
+                  <span>Claimed</span>
+                  <span>Start</span>
+                  <span>Unlock</span>
+                  <span>Status</span>
+                  <span className="text-right">BscScan</span>
+                </div>
 
-                return (
-                  <div
-                    key={i}
-                    className={`grid grid-cols-7 gap-2 px-5 py-4 text-sm border-b border-gray-700/50 items-center ${
-                      isWithdrawn ? "opacity-50" : ""
-                    }`}
-                  >
-                    <span className="text-gray-500 text-xs">{i + 1}</span>
+                {/* Table Rows */}
+                {stakes.map((stake, i) => {
 
-                    <span className="text-yellow-400 font-semibold text-xs truncate">
-                      {planName}
-                    </span>
+                  const planId = Number(stake.planId);
+                  const plan = plans[planId];
+                  const planName = plan ? plan.name : `Plan #${planId}`;
+                  const stakedAmt = Number(ethers.formatUnits(stake.amount || 0, 18));
+                  const claimedAmt = Number(ethers.formatUnits(stake.claimed || 0, 18));
+                  const isWithdrawn = stake.withdrawn;
+                  const unlocked = isUnlocked(stake);
+                  const progressPercent = stakedAmt > 0 ? (claimedAmt / stakedAmt) * 100 : 0;
 
-                    <span className="text-white font-semibold text-xs">
-                      {stakedAmt.toLocaleString()}
-                    </span>
-
-                    <span className="text-green-400 text-xs">
-                      {claimedAmt.toLocaleString()}
-                    </span>
-
-                    <span className="text-gray-300 text-xs">
-                      {fmtDate(stake.startTime)}
-                    </span>
-
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${
-                      isWithdrawn
-                        ? "bg-gray-700 text-gray-400"
-                        : unlocked
-                        ? "bg-green-900 text-green-400"
-                        : "bg-blue-900 text-blue-400"
-                    }`}>
-                      {isWithdrawn ? "Closed" : unlocked ? "Unlocked" : "Locked"}
-                    </span>
-
-                    <a
-                      href={`https://testnet.bscscan.com/address/${account}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-400 hover:underline text-right"
+                  return (
+                    <div
+                      key={i}
+                      className={`grid grid-cols-8 gap-2 px-5 py-4 text-sm border-b border-gray-700/50 items-center ${
+                        isWithdrawn ? "opacity-50" : ""
+                      }`}
                     >
-                      View 🔗
-                    </a>
-                  </div>
-                );
-              })}
+                      <span className="text-gray-500 text-xs">{i + 1}</span>
 
-              {/* Table Footer Summary */}
-              <div className="grid grid-cols-7 gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700">
-                <span className="text-gray-400">Total</span>
-                <span className="text-gray-400">{stakes.length} stakes</span>
-                <span className="text-white">{totalUserStaked.toLocaleString()}</span>
-                <span className="text-green-400">{totalUserClaimed.toLocaleString()}</span>
-                <span></span>
-                <span className="text-yellow-400">{activeStakes.length} active</span>
-                <span></span>
+                      <span className="text-yellow-400 font-semibold text-xs truncate" title={planName}>
+                        {planName}
+                      </span>
+
+                      <span className="text-white font-semibold text-xs">
+                        {stakedAmt.toLocaleString()}
+                      </span>
+
+                      <div>
+                        <span className="text-green-400 text-xs block">
+                          {claimedAmt.toLocaleString()}
+                        </span>
+                        <span className="text-gray-500 text-xs">
+                          {progressPercent.toFixed(1)}%
+                        </span>
+                      </div>
+
+                      <span className="text-gray-300 text-xs">
+                        {fmtDate(stake.startTime)}
+                      </span>
+
+                      <span className="text-gray-300 text-xs">
+                        {fmtDate(stake.unlockTime)}
+                      </span>
+
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${
+                        isWithdrawn
+                          ? "bg-gray-700 text-gray-400"
+                          : unlocked
+                          ? "bg-green-900 text-green-400"
+                          : "bg-blue-900 text-blue-400"
+                      }`}>
+                        {isWithdrawn ? "Closed" : unlocked ? "Unlocked" : "Locked"}
+                      </span>
+
+                      <a
+                        href={`https://testnet.bscscan.com/address/${account}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-400 hover:underline text-right"
+                      >
+                        View 🔗
+                      </a>
+                    </div>
+                  );
+                })}
+
+                {/* Table Footer Summary */}
+                <div className="grid grid-cols-8 gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700">
+                  <span className="text-gray-400">Total</span>
+                  <span className="text-gray-400">{stakes.length} stakes</span>
+                  <span className="text-white">{totalUserStaked.toLocaleString()}</span>
+                  <span className="text-green-400">{totalUserClaimed.toLocaleString()}</span>
+                  <span></span>
+                  <span></span>
+                  <span className="text-yellow-400">{activeStakes.length} active</span>
+                  <span></span>
+                </div>
+
               </div>
-
-            </div>
+            </>
           )}
         </>
       )}

@@ -16,6 +16,7 @@ export default function AdminDashboard({ account, signer, provider }) {
     fetchTotalStakedInPlan,
     fetchPlanPaused,
     fetchPlanEmergency,
+    fetchContractEvents,
   } = useContract(signer, provider);
 
   // ─── State ───────────────────────────────────────────
@@ -36,6 +37,8 @@ export default function AdminDashboard({ account, signer, provider }) {
   const [planStakedAmounts, setPlanStakedAmounts] = useState({});
   const [planPausedStatus, setPlanPausedStatus] = useState({});
   const [planEmergencyStatus, setPlanEmergencyStatus] = useState({});
+  const [txEvents, setTxEvents] = useState([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   // Create Plan Form
   const [planForm, setPlanForm] = useState({
@@ -142,7 +145,7 @@ export default function AdminDashboard({ account, signer, provider }) {
   async function handleCreatePlan() {
     const { name, lockPeriod, releasePercent, claimInterval, minTokenAmount } = planForm;
     if (!name || !lockPeriod || !releasePercent || !claimInterval || !minTokenAmount) {
-      toast.error("Sab fields fill karo!");
+      toast.error("Please fill all fields!");
       return;
     }
     await runTx(async () => {
@@ -184,7 +187,7 @@ export default function AdminDashboard({ account, signer, provider }) {
   }
 
   async function handleSetMaxTVL() {
-    if (!maxTVL) return toast.error("MaxTVL enter karo!");
+    if (!maxTVL) return toast.error("Please enter MaxTVL!");
     await runTx(async () => {
       const c = getContract();
       const tx = await c.setMaxTVL(ethers.parseEther(maxTVL));
@@ -194,7 +197,7 @@ export default function AdminDashboard({ account, signer, provider }) {
   }
 
   async function handleSetMinAmount() {
-    if (!minAmountPlanId || !minAmount) return toast.error("Plan ID aur amount enter karo!");
+    if (!minAmountPlanId || !minAmount) return toast.error("Please enter Plan ID and amount!");
     await runTx(async () => {
       const c = getContract();
       const tx = await c.setMinTokenAmount(
@@ -208,7 +211,7 @@ export default function AdminDashboard({ account, signer, provider }) {
   }
 
   async function handleSetPairAddress() {
-    if (!pairAddress) return toast.error("Pair address enter karo!");
+    if (!pairAddress) return toast.error("Please enter pair address!");
     await runTx(async () => {
       const c = getContract();
       const tx = await c.setPairAddress(pairAddress);
@@ -218,7 +221,7 @@ export default function AdminDashboard({ account, signer, provider }) {
   }
 
   async function handleSetPriceFeed() {
-    if (!priceFeed) return toast.error("Price feed address enter karo!");
+    if (!priceFeed) return toast.error("Please enter price feed address!");
     await runTx(async () => {
       const c = getContract();
       const tx = await c.setPriceFeed(priceFeed);
@@ -236,7 +239,7 @@ export default function AdminDashboard({ account, signer, provider }) {
   }
 
   async function handleWithdrawStuck() {
-    if (!stuckToken || !stuckAmount) return toast.error("Token address aur amount enter karo!");
+    if (!stuckToken || !stuckAmount) return toast.error("Please enter token address and amount!");
     await runTx(async () => {
       const c = getContract();
       const tx = await c.withdrawStuckTokens(
@@ -361,7 +364,7 @@ export default function AdminDashboard({ account, signer, provider }) {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-gray-700 pb-2">
-        {["plans", "create", "analytics", "settings", "emergency"].map((tab) => (
+        {["plans", "create", "analytics", "history", "settings", "emergency"].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -374,6 +377,7 @@ export default function AdminDashboard({ account, signer, provider }) {
             {tab === "plans" && "📋 Plans"}
             {tab === "create" && "➕ Create Plan"}
             {tab === "analytics" && "📊 Analytics"}
+            {tab === "history" && "📜 History"}
             {tab === "settings" && "⚙️ Settings"}
             {tab === "emergency" && "🚨 Emergency"}
           </button>
@@ -560,6 +564,151 @@ export default function AdminDashboard({ account, signer, provider }) {
               </div>
             </div>
           </div>
+
+        </div>
+      )}
+
+      {/* ── TAB: HISTORY ── */}
+      {activeTab === "history" && (
+        <div className="space-y-6">
+
+          <div className="flex justify-between items-center">
+            <h2 className="text-white font-bold text-lg">📜 Transaction History</h2>
+            <button
+              onClick={async () => {
+                setEventsLoading(true);
+                try {
+                  const events = await fetchContractEvents();
+                  setTxEvents(events);
+                } catch (err) {
+                  console.error(err);
+                  toast.error("Events load failed");
+                } finally {
+                  setEventsLoading(false);
+                }
+              }}
+              className="text-sm bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded transition"
+            >
+              {eventsLoading ? "Loading..." : "🔄 Load Events"}
+            </button>
+          </div>
+
+          {txEvents.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <p className="text-5xl mb-4">📜</p>
+              <p className="text-lg">Click Load Events to fetch data</p>
+              <p className="text-sm mt-2">Events from last ~5,000 blocks will be shown</p>
+            </div>
+          ) : (
+            <>
+              {/* Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-center">
+                  <p className="text-gray-400 text-xs mb-1">Total Transactions</p>
+                  <p className="text-white font-bold text-lg">{txEvents.length}</p>
+                </div>
+                <div className="bg-gray-800 border border-green-500/20 rounded-xl p-4 text-center">
+                  <p className="text-gray-400 text-xs mb-1">Stakes</p>
+                  <p className="text-green-400 font-bold text-lg">{txEvents.filter(e => e.type === "Stake").length}</p>
+                </div>
+                <div className="bg-gray-800 border border-yellow-500/20 rounded-xl p-4 text-center">
+                  <p className="text-gray-400 text-xs mb-1">Claims</p>
+                  <p className="text-yellow-400 font-bold text-lg">{txEvents.filter(e => e.type === "Claim").length}</p>
+                </div>
+                <div className="bg-gray-800 border border-orange-500/20 rounded-xl p-4 text-center">
+                  <p className="text-gray-400 text-xs mb-1">Withdrawals</p>
+                  <p className="text-orange-400 font-bold text-lg">{txEvents.filter(e => e.type === "Withdraw" || e.type === "Emergency").length}</p>
+                </div>
+              </div>
+
+              {/* Today's Transactions */}
+              {(() => {
+                const todayStart = Math.floor(new Date().setHours(0,0,0,0) / 1000);
+                const todayEvents = txEvents.filter(e => e.timestamp >= todayStart);
+                return (
+                  <div className="bg-gray-800 border border-yellow-500/30 rounded-xl p-5">
+                    <h3 className="text-yellow-400 font-bold mb-3">📅 Today's Activity ({todayEvents.length} transactions)</h3>
+                    {todayEvents.length === 0 ? (
+                      <p className="text-gray-400 text-sm">Aaj koi transaction nahi hua</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {todayEvents.map((evt, idx) => (
+                          <div key={idx} className="flex justify-between items-center bg-gray-900 rounded-lg px-4 py-2">
+                            <div className="flex gap-3 items-center">
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                                evt.type === "Stake" ? "bg-green-900 text-green-400" :
+                                evt.type === "Claim" ? "bg-yellow-900 text-yellow-400" :
+                                evt.type === "Withdraw" ? "bg-orange-900 text-orange-400" :
+                                "bg-red-900 text-red-400"
+                              }`}>{evt.type}</span>
+                              <span className="text-white text-xs">{evt.user?.slice(0,6)}...{evt.user?.slice(-4)}</span>
+                              <span className="text-gray-400 text-xs">{Number(evt.amount).toLocaleString()} CRP</span>
+                            </div>
+                            <a href={`https://testnet.bscscan.com/tx/${evt.txHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline">
+                              View 🔗
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* All Transactions Table */}
+              <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+                <div className="grid grid-cols-6 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
+                  <span>Type</span>
+                  <span>Wallet</span>
+                  <span>Amount</span>
+                  <span>Date</span>
+                  <span>Block</span>
+                  <span className="text-right">Tx Hash</span>
+                </div>
+
+                {txEvents.map((evt, idx) => (
+                  <div key={idx} className="grid grid-cols-6 gap-2 px-5 py-3 text-sm border-b border-gray-700/50 items-center">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${
+                      evt.type === "Stake" ? "bg-green-900 text-green-400" :
+                      evt.type === "Claim" ? "bg-yellow-900 text-yellow-400" :
+                      evt.type === "Withdraw" ? "bg-orange-900 text-orange-400" :
+                      "bg-red-900 text-red-400"
+                    }`}>{evt.type}</span>
+
+                    <a href={`https://testnet.bscscan.com/address/${evt.user}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline truncate">
+                      {evt.user?.slice(0,6)}...{evt.user?.slice(-4)}
+                    </a>
+
+                    <span className="text-white font-semibold text-xs">
+                      {Number(evt.amount).toLocaleString()} CRP
+                    </span>
+
+                    <span className="text-gray-300 text-xs">
+                      {evt.timestamp ? new Date(evt.timestamp * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                    </span>
+
+                    <span className="text-gray-500 text-xs">
+                      {evt.blockNumber}
+                    </span>
+
+                    <a href={`https://testnet.bscscan.com/tx/${evt.txHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline text-right truncate">
+                      {evt.txHash?.slice(0,10)}...
+                    </a>
+                  </div>
+                ))}
+
+                <div className="grid grid-cols-6 gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700">
+                  <span className="text-gray-400">Total</span>
+                  <span className="text-gray-400">{[...new Set(txEvents.map(e => e.user))].length} wallets</span>
+                  <span className="text-white">{txEvents.reduce((s, e) => s + Number(e.amount), 0).toLocaleString()} CRP</span>
+                  <span></span>
+                  <span></span>
+                  <span className="text-gray-400 text-right">{txEvents.length} txns</span>
+                </div>
+              </div>
+
+            </>
+          )}
 
         </div>
       )}

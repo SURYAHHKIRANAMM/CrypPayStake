@@ -175,6 +175,77 @@ export function useContract(signer, provider) {
     }
   }
 
+  // Fetch Contract Events via BSCScan API
+  async function fetchContractEvents() {
+    try {
+      const apiUrl = `https://api-testnet.bscscan.com/api?module=logs&action=getLogs&address=${CONTRACT_ADDRESS}&fromBlock=0&toBlock=latest&apikey=YourApiKeyToken`;
+
+      const response = await fetch(apiUrl);
+      const data = await response.json();
+
+      if (data.status !== "1" || !data.result) return [];
+
+      const eventABI = [
+        "event UserStaked(address indexed user, uint256 indexed planId, string planName, uint256 amount, uint256 unlockTime)",
+        "event UserClaimed(address indexed user, uint256 indexed stakeIndex, uint256 amount, uint256 totalClaimed, uint256 remaining)",
+        "event UserWithdrawn(address indexed user, uint256 indexed planId, uint256 principalReleased, uint256 totalClaimed, uint256 unlockTime)",
+        "event EmergencyWithdrawn(address indexed user, uint256 indexed planId, uint256 amount, uint256 penalty)"
+      ];
+
+      const iface = new ethers.Interface(eventABI);
+      const allEvents = [];
+
+      for (const log of data.result) {
+        try {
+          const parsed = iface.parseLog({ topics: log.topics, data: log.data });
+          if (!parsed) continue;
+
+          let type = "";
+          let amount = "0";
+          let user = "";
+
+          if (parsed.name === "UserStaked") {
+            type = "Stake";
+            user = parsed.args[0];
+            amount = ethers.formatEther(parsed.args[3]);
+          } else if (parsed.name === "UserClaimed") {
+            type = "Claim";
+            user = parsed.args[0];
+            amount = ethers.formatEther(parsed.args[2]);
+          } else if (parsed.name === "UserWithdrawn") {
+            type = "Withdraw";
+            user = parsed.args[0];
+            amount = ethers.formatEther(parsed.args[2]);
+          } else if (parsed.name === "EmergencyWithdrawn") {
+            type = "Emergency";
+            user = parsed.args[0];
+            amount = ethers.formatEther(parsed.args[2]);
+          } else {
+            continue;
+          }
+
+          allEvents.push({
+            type,
+            user,
+            amount,
+            txHash: log.transactionHash,
+            blockNumber: parseInt(log.blockNumber, 16),
+            planName: parsed.name === "UserStaked" ? parsed.args[2] : "",
+            timestamp: parseInt(log.timeStamp, 16),
+          });
+        } catch {
+          continue;
+        }
+      }
+
+      allEvents.sort((a, b) => b.blockNumber - a.blockNumber);
+      return allEvents;
+    } catch (err) {
+      console.error("Event fetch error:", err);
+      return [];
+    }
+  }
+
   // ─── WRITE FUNCTIONS ───────────────────────────────
 
   // ✅ Approve Tokens — alag function
@@ -244,6 +315,7 @@ export function useContract(signer, provider) {
     fetchPlanEmergency,
     fetchEmergencyMode,
     fetchHasStakedBefore,
+    fetchContractEvents,
     // Write functions
     approveTokens,
     stakeTokens,
