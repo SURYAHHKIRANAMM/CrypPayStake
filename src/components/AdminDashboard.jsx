@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import { useContract } from "../hooks/useContract";
-import { CONTRACT_ADDRESS, ABI } from "../contract/config";
+import { CONTRACT_ADDRESS, ABI, ADMIN_WALLET, VIEWER_WALLET } from "../contract/config";
 
 export default function AdminDashboard({ account, signer, provider }) {
 
@@ -17,6 +17,13 @@ export default function AdminDashboard({ account, signer, provider }) {
     fetchPlanPaused,
     fetchPlanEmergency,
     fetchContractEvents,
+    fetchOwner,
+    fetchPairAddress,
+    fetchPriceFeedAddress,
+    fetchPaused,
+    fetchTWAPPrice,
+    fetchCrypPayToken,
+    transferOwnership,
   } = useContract(signer, provider);
 
   // ─── State ───────────────────────────────────────────
@@ -39,6 +46,13 @@ export default function AdminDashboard({ account, signer, provider }) {
   const [planEmergencyStatus, setPlanEmergencyStatus] = useState({});
   const [txEvents, setTxEvents] = useState([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [contractOwner, setContractOwner] = useState("");
+  const [currentPairAddress, setCurrentPairAddress] = useState("");
+  const [currentPriceFeed, setCurrentPriceFeed] = useState("");
+  const [protocolPaused, setProtocolPaused] = useState(false);
+  const [twapPrice, setTwapPrice] = useState("0");
+  const [tokenAddress, setTokenAddress] = useState("");
+  const [newOwnerAddress, setNewOwnerAddress] = useState("");
 
   // Create Plan Form
   const [planForm, setPlanForm] = useState({
@@ -59,6 +73,10 @@ export default function AdminDashboard({ account, signer, provider }) {
   const [stuckAmount, setStuckAmount] = useState("");
   const [emergencyMode, setEmergencyMode] = useState(false);
 
+  // Check if current user is full admin or viewer
+  const isFullAdmin = account?.toLowerCase() === ADMIN_WALLET.toLowerCase();
+  const isViewer = account?.toLowerCase() === VIEWER_WALLET.toLowerCase();
+
   // ─── Contract Writer ──────────────────────────────────
   function getContract() {
     if (!signer) throw new Error("Wallet not connected");
@@ -73,13 +91,19 @@ export default function AdminDashboard({ account, signer, provider }) {
   // ─── Load Data ────────────────────────────────────────
   async function loadData() {
     try {
-      const [p, s, price, tvl, distributed, withdrawn] = await Promise.all([
+      const [p, s, price, tvl, distributed, withdrawn, owner, pair, feed, isPaused, twap, crpToken] = await Promise.all([
         fetchPlans(),
         fetchStats(),
         fetchTokenPrice(),
         fetchTVLValue(),
         fetchTotalDistributed(),
         fetchTotalWithdrawn(),
+        fetchOwner(),
+        fetchPairAddress(),
+        fetchPriceFeedAddress(),
+        fetchPaused(),
+        fetchTWAPPrice(),
+        fetchCrypPayToken(),
       ]);
       setPlans(p);
       setStats(s);
@@ -87,6 +111,12 @@ export default function AdminDashboard({ account, signer, provider }) {
       setTvlUSD(tvl);
       setTotalDistributed(distributed);
       setTotalWithdrawn(withdrawn);
+      setContractOwner(owner);
+      setCurrentPairAddress(pair);
+      setCurrentPriceFeed(feed);
+      setProtocolPaused(isPaused);
+      setTwapPrice(twap);
+      setTokenAddress(crpToken);
 
       const reader = getReader();
       const em = await reader.emergencyMode();
@@ -364,7 +394,10 @@ export default function AdminDashboard({ account, signer, provider }) {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-gray-700 pb-2">
-        {["plans", "create", "analytics", "history", "settings", "emergency"].map((tab) => (
+        {(isFullAdmin
+          ? ["plans", "create", "analytics", "history", "settings", "emergency"]
+          : ["plans", "analytics", "history"]
+        ).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -413,6 +446,7 @@ export default function AdminDashboard({ account, signer, provider }) {
                       )}
                     </div>
                   </div>
+                  {isFullAdmin && (
                   <div className="flex gap-2">
                     <AdminButton
                       onClick={() => handleTogglePause(index)}
@@ -432,11 +466,18 @@ export default function AdminDashboard({ account, signer, provider }) {
                       />
                     )}
                   </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-5 gap-3 text-sm">
                   <div>
                     <p className="text-gray-400 text-xs">Lock Period</p>
-                    <p className="text-white">{(Number(plan.lockPeriod) / 2592000).toFixed(0)} months</p>
+                    <p className="text-white">{
+                      Number(plan.lockPeriod) >= 2592000 ? `${(Number(plan.lockPeriod) / 2592000).toFixed(0)} Months` :
+                      Number(plan.lockPeriod) >= 86400 ? `${(Number(plan.lockPeriod) / 86400).toFixed(0)} Days` :
+                      Number(plan.lockPeriod) >= 3600 ? `${(Number(plan.lockPeriod) / 3600).toFixed(0)} Hours` :
+                      Number(plan.lockPeriod) >= 60 ? `${(Number(plan.lockPeriod) / 60).toFixed(0)} Min` :
+                      `${Number(plan.lockPeriod)} Sec`
+                    }</p>
                   </div>
                   <div>
                     <p className="text-gray-400 text-xs">Release %</p>
@@ -444,7 +485,12 @@ export default function AdminDashboard({ account, signer, provider }) {
                   </div>
                   <div>
                     <p className="text-gray-400 text-xs">Claim Interval</p>
-                    <p className="text-white">{(Number(plan.claimInterval) / 86400).toFixed(0)} days</p>
+                    <p className="text-white">{
+                      Number(plan.claimInterval) >= 86400 ? `${(Number(plan.claimInterval) / 86400).toFixed(0)} Days` :
+                      Number(plan.claimInterval) >= 3600 ? `${(Number(plan.claimInterval) / 3600).toFixed(0)} Hours` :
+                      Number(plan.claimInterval) >= 60 ? `${(Number(plan.claimInterval) / 60).toFixed(0)} Min` :
+                      `${Number(plan.claimInterval)} Sec`
+                    }</p>
                   </div>
                   <div>
                     <p className="text-gray-400 text-xs">Min Stake</p>
@@ -560,6 +606,30 @@ export default function AdminDashboard({ account, signer, provider }) {
                 <p className="text-gray-400 text-xs">Paused Plans</p>
                 <p className="text-orange-400 font-bold text-lg">
                   {Object.values(planPausedStatus).filter(v => v).length}
+                </p>
+              </div>
+            </div>
+          </div>
+          {/* Token & Price Details */}
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
+            <h2 className="text-white font-bold text-lg mb-5">💰 Token & Price Details</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div>
+                <p className="text-gray-400 text-xs">TWAP Price</p>
+                <p className="text-yellow-400 font-bold text-lg">
+                  ${Number(twapPrice) > 0 ? Number(twapPrice).toFixed(6) : "N/A"}
+                </p>
+              </div>
+              <div>
+                <p className="text-gray-400 text-xs">CRP Token Contract</p>
+                <a href={`https://testnet.bscscan.com/address/${tokenAddress}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline break-all">
+                  {tokenAddress ? `${tokenAddress.slice(0,10)}...${tokenAddress.slice(-8)}` : "N/A"}
+                </a>
+              </div>
+              <div>
+                <p className="text-gray-400 text-xs">Protocol Paused</p>
+                <p className={`font-bold text-lg ${protocolPaused ? "text-red-400" : "text-green-400"}`}>
+                  {protocolPaused ? "🔴 YES" : "🟢 NO"}
                 </p>
               </div>
             </div>
@@ -755,6 +825,62 @@ export default function AdminDashboard({ account, signer, provider }) {
               <AdminButton onClick={handleWithdrawStuck} label="Withdraw Tokens" color="orange" />
             </div>
           </div>
+          {/* Current Addresses */}
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-5 col-span-2">
+            <h3 className="text-white font-semibold mb-4">📋 Current Configuration</h3>
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div>
+                <p className="text-gray-400 text-xs mb-1">Contract Owner</p>
+                <a href={`https://testnet.bscscan.com/address/${contractOwner}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline break-all">
+                  {contractOwner ? `${contractOwner.slice(0,10)}...${contractOwner.slice(-8)}` : "Loading..."}
+                </a>
+              </div>
+              <div>
+                <p className="text-gray-400 text-xs mb-1">Pair Address (TWAP)</p>
+                <a href={`https://testnet.bscscan.com/address/${currentPairAddress}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline break-all">
+                  {currentPairAddress ? `${currentPairAddress.slice(0,10)}...${currentPairAddress.slice(-8)}` : "Not Set"}
+                </a>
+              </div>
+              <div>
+                <p className="text-gray-400 text-xs mb-1">Price Feed (Chainlink)</p>
+                <a href={`https://testnet.bscscan.com/address/${currentPriceFeed}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline break-all">
+                  {currentPriceFeed ? `${currentPriceFeed.slice(0,10)}...${currentPriceFeed.slice(-8)}` : "Not Set"}
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Transfer Ownership */}
+          <div className="bg-gray-800 border border-red-700 rounded-xl p-5 col-span-2">
+            <h3 className="text-red-400 font-semibold mb-2">⚠️ Transfer Ownership</h3>
+            <p className="text-gray-400 text-xs mb-4">Warning: This will transfer full admin control to the new address. This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <InputField
+                  label="New Owner Address"
+                  value={newOwnerAddress}
+                  onChange={setNewOwnerAddress}
+                  placeholder="0x..."
+                />
+              </div>
+              <div className="flex items-end">
+                <AdminButton
+                  onClick={async () => {
+                    if (!newOwnerAddress) return toast.error("Please enter new owner address!");
+                    if (!window.confirm("Are you sure? This will permanently transfer ownership!")) return;
+                    await runTx(async () => {
+                      const c = getContract();
+                      const tx = await c.transferOwnership(newOwnerAddress);
+                      await tx.wait();
+                    }, "Ownership transferred! ✅");
+                    setNewOwnerAddress("");
+                  }}
+                  label="Transfer Ownership"
+                  color="red"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -764,7 +890,7 @@ export default function AdminDashboard({ account, signer, provider }) {
           <div className="bg-gray-800 border border-red-700 rounded-xl p-6">
             <h3 className="text-red-400 font-bold text-lg mb-2">🚨 Global Emergency Mode</h3>
             <p className="text-gray-400 text-sm mb-4">
-              Yeh enable karne se saare users emergency withdraw kar sakte hain.
+              Enabling this will allow all users to emergency withdraw.
             </p>
             <div className="flex gap-3">
               <AdminButton onClick={() => handleSetEmergencyMode(true)} label="Enable Emergency" color="red" disabled={emergencyMode} />
@@ -779,7 +905,7 @@ export default function AdminDashboard({ account, signer, provider }) {
           <div className="bg-gray-800 border border-orange-700 rounded-xl p-6">
             <h3 className="text-orange-400 font-bold text-lg mb-2">⚠️ Per-Plan Emergency</h3>
             <p className="text-gray-400 text-sm mb-4">
-              Specific plan ke liye emergency toggle karo.
+              Toggle emergency mode for a specific plan.
             </p>
             <div className="space-y-3">
               {plans.map((plan, index) => (

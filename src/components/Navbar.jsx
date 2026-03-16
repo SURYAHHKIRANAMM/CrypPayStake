@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import WalletButton from "./WalletButton";
 import { useWallet } from "../hooks/useWallet";
-import { ADMIN_WALLET } from "../contract/config";
+import { ADMIN_WALLET, VIEWER_WALLET } from "../contract/config";
 import { useState, useEffect } from "react";
 
 export default function Navbar({ provider }) {
@@ -12,14 +12,15 @@ export default function Navbar({ provider }) {
 
   useEffect(() => {
     if (account) {
-      if (account.toLowerCase() === ADMIN_WALLET.toLowerCase()) {
+      const addr = account.toLowerCase();
+      if (addr === ADMIN_WALLET.toLowerCase() || addr === VIEWER_WALLET.toLowerCase()) {
         setIsAdmin(true);
       } else {
         setIsAdmin(false);
       }
     }
   }, [account]);
-
+  
   return (
     <nav className="
       flex justify-between items-center

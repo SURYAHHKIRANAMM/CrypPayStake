@@ -15,6 +15,7 @@ export default function UserDashboard({ account, signer, provider }) {
     fetchTokenPrice,
     fetchTotalDistributed,
     fetchUserStakeCount,
+    fetchEmergencyMode,
     claimTokens,
     withdrawTokens,
     emergencyWithdrawTokens,
@@ -33,12 +34,13 @@ export default function UserDashboard({ account, signer, provider }) {
   const [tvlUSD, setTvlUSD] = useState("0");
   const [totalDistributed, setTotalDistributed] = useState("0");
   const [userStakeCount, setUserStakeCount] = useState("0");
+  const [emergencyMode, setEmergencyMode] = useState(false);
 
   // Load all data
   const loadData = useCallback(async () => {
     if (!account) return;
     try {
-      const [stakeData, planData, statData, price, tvl, distributed, stakeCount] = await Promise.all([
+      const [stakeData, planData, statData, price, tvl, distributed, stakeCount, isEmergency] = await Promise.all([
         fetchUserStakes(account),
         fetchPlans(),
         fetchStats(),
@@ -46,6 +48,7 @@ export default function UserDashboard({ account, signer, provider }) {
         fetchTVLValue(),
         fetchTotalDistributed(),
         fetchUserStakeCount(account),
+        fetchEmergencyMode(),
       ]);
       setStakes(stakeData);
       setPlans(planData);
@@ -54,6 +57,7 @@ export default function UserDashboard({ account, signer, provider }) {
       setTvlUSD(tvl);
       setTotalDistributed(distributed);
       setUserStakeCount(stakeCount);
+      setEmergencyMode(isEmergency);
 
       const rewards = await Promise.all(
         stakeData.map((_, i) => fetchClaimable(account, i))
@@ -299,11 +303,13 @@ export default function UserDashboard({ account, signer, provider }) {
                         <p className="text-gray-500 text-xs mt-0.5">Stake #{i + 1}</p>
                       </div>
                       <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                        isUnlocked(stake)
+                        progressPercent >= 100
+                          ? "bg-yellow-900 text-yellow-400"
+                          : isUnlocked(stake)
                           ? "bg-green-900 text-green-400"
                           : "bg-blue-900 text-blue-400"
                       }`}>
-                        {isUnlocked(stake) ? "Unlocked ✅" : "Locked 🔒"}
+                        {progressPercent >= 100 ? "Claimed ✅" : isUnlocked(stake) ? "Unlocked 🔓" : "Locked 🔒"}
                       </span>
                     </div>
 
@@ -357,30 +363,38 @@ export default function UserDashboard({ account, signer, provider }) {
 
                     {/* Action Buttons */}
                     <div className="flex gap-2 flex-wrap">
-                      <button
-                        disabled={loading || Number(claimables[i] || 0) <= 0}
-                        onClick={() => handleClaim(i)}
-                        className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:opacity-50 px-3 py-2.5 rounded-full text-white font-bold text-sm transition"
-                      >
-                        {loadingIndex === i && loading ? "..." : "Claim"}
-                      </button>
 
-                      <button
-                        disabled={loading || !isUnlocked(stake)}
-                        onClick={() => handleWithdraw(i)}
-                        className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 disabled:opacity-50 px-3 py-2.5 rounded-full text-black font-bold text-sm transition"
-                      >
-                        {loadingIndex === i && loading ? "..." : "Withdraw"}
-                      </button>
+                      {!emergencyMode && (
+                        <button
+                          disabled={loading || Number(claimables[i] || 0) <= 0}
+                          onClick={() => handleClaim(i)}
+                          className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:opacity-50 px-3 py-2.5 rounded-full text-white font-bold text-sm transition"
+                        >
+                          {loadingIndex === i && loading ? "..." : "Claim"}
+                        </button>
+                      )}
 
-                      <button
-                        disabled={loading}
-                        onClick={() => handleEmergency(i)}
-                        className="bg-red-600 hover:bg-red-500 disabled:opacity-50 px-3 py-2.5 rounded-full text-white font-bold text-sm transition"
-                        title="Emergency Withdraw"
-                      >
-                        🚨
-                      </button>
+                      {emergencyMode && (
+                        <>
+                          <button
+                            disabled={loading}
+                            onClick={() => handleWithdraw(i)}
+                            className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 disabled:opacity-50 px-3 py-2.5 rounded-full text-black font-bold text-sm transition"
+                          >
+                            {loadingIndex === i && loading ? "..." : "Withdraw"}
+                          </button>
+
+                          <button
+                            disabled={loading}
+                            onClick={() => handleEmergency(i)}
+                            className="bg-red-600 hover:bg-red-500 disabled:opacity-50 px-3 py-2.5 rounded-full text-white font-bold text-sm transition"
+                            title="Emergency Withdraw"
+                          >
+                            🚨
+                          </button>
+                        </>
+                      )}
+
                     </div>
 
                   </div>
@@ -426,12 +440,13 @@ export default function UserDashboard({ account, signer, provider }) {
               <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
 
                 {/* Table Header */}
-                <div className="grid grid-cols-8 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
+                <div className="grid grid-cols-9 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
                   <span>#</span>
                   <span>Plan</span>
                   <span>Staked</span>
                   <span>Claimed</span>
                   <span>Start</span>
+                  <span>Last Claim</span>
                   <span>Unlock</span>
                   <span>Status</span>
                   <span className="text-right">BscScan</span>
@@ -452,7 +467,7 @@ export default function UserDashboard({ account, signer, provider }) {
                   return (
                     <div
                       key={i}
-                      className={`grid grid-cols-8 gap-2 px-5 py-4 text-sm border-b border-gray-700/50 items-center ${
+                      className={`grid grid-cols-9 gap-2 px-5 py-4 text-sm border-b border-gray-700/50 items-center ${
                         isWithdrawn ? "opacity-50" : ""
                       }`}
                     >
@@ -480,17 +495,23 @@ export default function UserDashboard({ account, signer, provider }) {
                       </span>
 
                       <span className="text-gray-300 text-xs">
+                        {Number(stake.lastClaimTime) > 0 ? fmtDate(stake.lastClaimTime) : "—"}
+                      </span>
+
+                      <span className="text-gray-300 text-xs">
                         {fmtDate(stake.unlockTime)}
                       </span>
 
                       <span className={`text-xs px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${
                         isWithdrawn
                           ? "bg-gray-700 text-gray-400"
+                          : progressPercent >= 100
+                          ? "bg-yellow-900 text-yellow-400"
                           : unlocked
                           ? "bg-green-900 text-green-400"
                           : "bg-blue-900 text-blue-400"
                       }`}>
-                        {isWithdrawn ? "Closed" : unlocked ? "Unlocked" : "Locked"}
+                        {isWithdrawn ? "Closed" : progressPercent >= 100 ? "Claimed" : unlocked ? "Unlocked" : "Locked"}
                       </span>
 
                       <a
@@ -506,7 +527,7 @@ export default function UserDashboard({ account, signer, provider }) {
                 })}
 
                 {/* Table Footer Summary */}
-                <div className="grid grid-cols-8 gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700">
+                <div className="grid grid-cols-9 gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700">
                   <span className="text-gray-400">Total</span>
                   <span className="text-gray-400">{stakes.length} stakes</span>
                   <span className="text-white">{totalUserStaked.toLocaleString()}</span>

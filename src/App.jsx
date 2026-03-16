@@ -8,7 +8,7 @@ import AdminPanel from "./pages/AdminPanel";
 import Loading from "./components/Loading";
 
 import { useWallet } from "./hooks/useWallet";
-import { ADMIN_WALLET } from "./contract/config";
+import { ADMIN_WALLET, VIEWER_WALLET } from "./contract/config";
 
 export default function App() {
 
@@ -26,11 +26,14 @@ export default function App() {
   // Admin wallet detection
   useEffect(() => {
     if (account) {
-      if (account.toLowerCase() === ADMIN_WALLET.toLowerCase()) {
+      const addr = account.toLowerCase();
+      if (addr === ADMIN_WALLET.toLowerCase() || addr === VIEWER_WALLET.toLowerCase()) {
         setIsAdmin(true);
       } else {
         setIsAdmin(false);
       }
+    } else {
+      setIsAdmin(false);
     }
   }, [account]);
 

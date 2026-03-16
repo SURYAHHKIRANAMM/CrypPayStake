@@ -160,15 +160,25 @@ export default function Stake({ account, signer, provider, connectWallet }) {
 
           if (!plan.active) return null;
 
-          const lockMonths = (Number(plan.lockPeriod) / 2592000).toFixed(0);
-          const intervalDays = (Number(plan.claimInterval) / 86400).toFixed(0);
+          const lockSeconds = Number(plan.lockPeriod);
+          const lockDisplay = lockSeconds >= 2592000 ? `${(lockSeconds / 2592000).toFixed(0)} Months`
+            : lockSeconds >= 86400 ? `${(lockSeconds / 86400).toFixed(0)} Days`
+            : lockSeconds >= 3600 ? `${(lockSeconds / 3600).toFixed(0)} Hours`
+            : lockSeconds >= 60 ? `${(lockSeconds / 60).toFixed(0)} Minutes`
+            : `${lockSeconds} Seconds`;
+          const intervalSeconds = Number(plan.claimInterval);
+          const intervalDisplay = intervalSeconds >= 86400 ? `${(intervalSeconds / 86400).toFixed(0)} Days`
+            : intervalSeconds >= 3600 ? `${(intervalSeconds / 3600).toFixed(0)} Hours`
+            : intervalSeconds >= 60 ? `${(intervalSeconds / 60).toFixed(0)} Minutes`
+            : `${intervalSeconds} Seconds`;
           const releasePercent = Number(plan.releasePercent);
           const minAmt = Number(ethers.formatUnits(plan.minTokenAmount, 18));
           const isSelected = selectedPlan === i;
 
           const userAmount = Number(amount) || 0;
           const monthlyReturn = userAmount > 0 ? (userAmount * releasePercent / 100) : 0;
-          const totalReturn = userAmount > 0 ? (monthlyReturn * Number(lockMonths)) : 0;
+          const totalIntervals = lockSeconds > 0 && intervalSeconds > 0 ? Math.floor(lockSeconds / intervalSeconds) : 0;
+          const totalReturn = userAmount > 0 ? (monthlyReturn * totalIntervals) : 0;
 
           return (
 
@@ -197,7 +207,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                 <div className="flex justify-between">
                   <span className="text-gray-400">Lock Period</span>
                   <span className="text-white font-semibold">
-                    {lockMonths} Months
+                    {lockDisplay}
                   </span>
                 </div>
 
@@ -210,7 +220,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
 
                 <div className="flex justify-between">
                   <span className="text-gray-400">Claim Every</span>
-                  <span className="text-white">{intervalDays} Days</span>
+                  <span className="text-white">{intervalDisplay}</span>
                 </div>
 
                 <div className="flex justify-between border-t border-gray-700 pt-2 mt-2">
@@ -242,7 +252,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                       </span>
                     </div>
                     <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
-                      <span className="text-gray-400">Total Return ({lockMonths}mo)</span>
+                      <span className="text-gray-400">Total Return ({lockDisplay})</span>
                       <span className="text-yellow-400 font-bold">
                         {totalReturn.toLocaleString()} CRP
                       </span>

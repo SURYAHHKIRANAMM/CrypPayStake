@@ -1,17 +1,57 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Home from "../components/Home";
 import Stake from "../components/Stake";
 import Dashboard from "../components/UserDashboard";
+import { useContract } from "../hooks/useContract";
 
 export default function UserPanel({ account, signer, provider, connectWallet }) {
 
+  const { fetchUserStakeCount } = useContract(signer, provider);
   const [activeTab, setActiveTab] = useState("home");
+  const [hasStakes, setHasStakes] = useState(false);
 
-  const tabs = [
-    { id: "home",      label: "🏠 Home" },
-    { id: "stake",     label: "💰 Stake" },
-    ...(account ? [{ id: "dashboard", label: "📊 Dashboard" }] : []),
-  ];
+  // Check if user has stakes
+  useEffect(() => {
+    if (!account || !provider) {
+      setHasStakes(false);
+      setActiveTab("home");
+      return;
+    }
+    const checkStakes = async () => {
+      try {
+        const count = await fetchUserStakeCount(account);
+        if (Number(count) > 0) {
+          setHasStakes(true);
+          setActiveTab("stake");
+        } else {
+          setHasStakes(false);
+          setActiveTab("home");
+        }
+      } catch {
+        setHasStakes(false);
+      }
+    };
+    checkStakes();
+  }, [account, provider]);
+
+  // Tab logic:
+  // No wallet → Home + Stake
+  // Wallet + no stakes → Home + Stake
+  // Wallet + has stakes → Stake + Dashboard
+  const tabs = !account
+    ? [
+        { id: "home",  label: "🏠 Home" },
+        { id: "stake", label: "💰 Stake" },
+      ]
+    : hasStakes
+    ? [
+        { id: "stake",     label: "💰 Stake" },
+        { id: "dashboard", label: "📊 Dashboard" },
+      ]
+    : [
+        { id: "home",  label: "🏠 Home" },
+        { id: "stake", label: "💰 Stake" },
+      ];
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -51,7 +91,7 @@ export default function UserPanel({ account, signer, provider, connectWallet }) 
         />
       )}
 
-      {activeTab === "dashboard" && account && (
+      {activeTab === "dashboard" && account && hasStakes && (
         <Dashboard
           account={account}
           signer={signer}

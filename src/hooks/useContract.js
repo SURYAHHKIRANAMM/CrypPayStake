@@ -63,7 +63,7 @@ export function useContract(signer, provider) {
     if (!stakingReader) return "0";
     try {
       const tvl = await stakingReader.getTVLValue();
-      return ethers.formatUnits(tvl, 8);
+      return ethers.formatUnits(tvl, 18);
     } catch {
       return "0";
     }
@@ -173,6 +173,77 @@ export function useContract(signer, provider) {
     } catch {
       return false;
     }
+  }
+
+  // Get Contract Owner
+  async function fetchOwner() {
+    if (!stakingReader) return "";
+    try {
+      return await stakingReader.owner();
+    } catch {
+      return "";
+    }
+  }
+
+  // Get Pair Address
+  async function fetchPairAddress() {
+    if (!stakingReader) return "";
+    try {
+      return await stakingReader.pairAddress();
+    } catch {
+      return "";
+    }
+  }
+
+  // Get Price Feed Address
+  async function fetchPriceFeedAddress() {
+    if (!stakingReader) return "";
+    try {
+      return await stakingReader.priceFeed();
+    } catch {
+      return "";
+    }
+  }
+
+  // Get Protocol Paused Status
+  async function fetchPaused() {
+    if (!stakingReader) return false;
+    try {
+      return await stakingReader.paused();
+    } catch {
+      return false;
+    }
+  }
+
+  // Get TWAP Price
+  async function fetchTWAPPrice() {
+    if (!stakingReader) return "0";
+    try {
+      const price = await stakingReader.getTWAPPrice();
+      return ethers.formatUnits(price, 8);
+    } catch {
+      return "0";
+    }
+  }
+
+  // Get CrypPay Token Address
+  async function fetchCrypPayToken() {
+    if (!stakingReader) return "";
+    try {
+      return await stakingReader.crypPayToken();
+    } catch {
+      return "";
+    }
+  }
+
+  // Transfer Ownership
+  async function transferOwnership(newOwner) {
+    if (!stakingContract) throw new Error("Wallet not connected");
+    const tx = await stakingContract.transferOwnership(newOwner, {
+      gasLimit: 100000n
+    });
+    await tx.wait();
+    return tx;
   }
 
   // Fetch Contract Events via BSCScan API
@@ -315,6 +386,13 @@ export function useContract(signer, provider) {
     fetchPlanEmergency,
     fetchEmergencyMode,
     fetchHasStakedBefore,
+    fetchOwner,
+    fetchPairAddress,
+    fetchPriceFeedAddress,
+    fetchPaused,
+    fetchTWAPPrice,
+    fetchCrypPayToken,
+    transferOwnership,
     fetchContractEvents,
     // Write functions
     approveTokens,

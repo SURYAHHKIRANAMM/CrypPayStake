@@ -41,7 +41,7 @@ export default function Home({ connectWallet, account }) {
             </div>
             <h3 className="text-white font-bold mb-2">Connect Wallet</h3>
             <p className="text-gray-400 text-sm">
-              Connect your MetaMask or any BSC-compatible wallet to get started
+              Connect Any Crypto Wallet to get started with staking
             </p>
           </div>
 
@@ -49,7 +49,7 @@ export default function Home({ connectWallet, account }) {
             <div className="w-10 h-10 bg-yellow-500 text-black font-bold text-lg rounded-full flex items-center justify-center mx-auto mb-4">
               2
             </div>
-            <h3 className="text-white font-bold mb-2">Stake CRP Tokens</h3>
+            <h3 className="text-white font-bold mb-2">Stake CrypPay (CRP) Coin</h3>
             <p className="text-gray-400 text-sm">
               Choose a staking plan, enter your amount and confirm the transaction
             </p>
@@ -146,9 +146,9 @@ export default function Home({ connectWallet, account }) {
 
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
           <p className="text-3xl mb-3">🔒</p>
-          <h3 className="text-yellow-400 font-bold mb-2">Principal Safe</h3>
+          <h3 className="text-yellow-400 font-bold mb-2">Principal Return</h3>
           <p className="text-gray-400 text-sm">
-            Your staked principal is always secure — only rewards are distributed
+            Your staked principal is returned in monthly installments over the lock period
           </p>
         </div>
 
