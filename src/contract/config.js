@@ -33,6 +33,7 @@ export const wagmiConfig = createConfig({
     [bscTestnet.id]: http("https://data-seed-prebsc-1-s1.binance.org:8545"),
   },
   ssr: false,
+  multiInjectedProviderDiscovery: false,
 });
 
 /*
