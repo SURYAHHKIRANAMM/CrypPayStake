@@ -1,39 +1,19 @@
-import { connectorsForWallets } from "@rainbow-me/rainbowkit";
-import {
-  metaMaskWallet,
-  trustWallet,
-  walletConnectWallet,
-  coinbaseWallet,
-} from "@rainbow-me/rainbowkit/wallets";
-import { createConfig, http } from "wagmi";
+import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { bscTestnet } from "wagmi/chains";
+import { http } from "wagmi";
 
 /*
 -----------------------------------
 Wagmi + RainbowKit Config
 -----------------------------------
 */
-const connectors = connectorsForWallets(
-  [
-    {
-      groupName: "Popular",
-      wallets: [metaMaskWallet, trustWallet, walletConnectWallet, coinbaseWallet],
-    },
-  ],
-  {
-    appName: "CrypPayStake",
-    projectId: "68a09f0e480bd91db9a891404d462ce1",
-  }
-);
-
-export const wagmiConfig = createConfig({
-  connectors,
+export const wagmiConfig = getDefaultConfig({
+  appName: "CrypPayStake",
+  projectId: "68a09f0e480bd91db9a891404d462ce1",
   chains: [bscTestnet],
   transports: {
     [bscTestnet.id]: http("https://data-seed-prebsc-1-s1.binance.org:8545"),
   },
-  ssr: false,
-  multiInjectedProviderDiscovery: false,
 });
 
 /*
