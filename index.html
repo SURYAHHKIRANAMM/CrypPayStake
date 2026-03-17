@@ -65,6 +65,48 @@
 
     <div id="root"></div>
 
+    <!-- NUCLEAR FIX: Block broken EIP-6963 wallet announcements -->
+    <script>
+      (function() {
+        try {
+          // Completely block EIP-6963 wallet discovery on mobile
+          var origDispatch = window.dispatchEvent.bind(window);
+          window.dispatchEvent = function(event) {
+            if (event && event.type && event.type.indexOf("eip6963") !== -1) {
+              return true;
+            }
+            return origDispatch(event);
+          };
+
+          var origAddEvent = window.addEventListener.bind(window);
+          window.addEventListener = function(type, listener, options) {
+            if (type && type.indexOf("eip6963") !== -1) {
+              return;
+            }
+            return origAddEvent(type, listener, options);
+          };
+
+          // Clean up any existing ethereum provider
+          if (window.ethereum) {
+            if (!window.ethereum.name) window.ethereum.name = "";
+            if (!window.ethereum.providerInfo) {
+              window.ethereum.providerInfo = { name: "", rdns: "", uuid: "" };
+            }
+            if (window.ethereum.providers) {
+              window.ethereum.providers.forEach(function(p) {
+                if (p && typeof p === "object") {
+                  if (!p.name) p.name = "";
+                  if (!p.info) p.info = { name: "", rdns: "", uuid: "" };
+                  if (!p.info.name) p.info.name = "";
+                  if (!p.info.rdns) p.info.rdns = "";
+                }
+              });
+            }
+          }
+        } catch(e) {}
+      })();
+    </script>
+
     <script type="module" src="/src/main.jsx"></script>
 
   </body>
