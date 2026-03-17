@@ -29,8 +29,8 @@ export const RPC_URL = "https://data-seed-prebsc-1-s1.binance.org:8545";
 Admin Wallets
 -----------------------------------
 */
-export const ADMIN_WALLET = "0x4fd0dbfC59B4D1257aA1fA3EC0981C6Bee1be572";
-export const VIEWER_WALLET = "0xec23685c637C28dD17dC07E600575A1141E250c0";
+export const ADMIN_WALLET = import.meta.env.VITE_ADMIN_WALLET;
+export const VIEWER_WALLET = import.meta.env.VITE_VIEWER_WALLET;
 
 /* 
 -----------------------------------

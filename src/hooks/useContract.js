@@ -175,6 +175,17 @@ export function useContract(signer, provider) {
     }
   }
 
+  // Fetch Live USD to INR Rate
+  async function fetchUSDtoINR() {
+    try {
+      const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
+      const data = await response.json();
+      return data.rates?.INR || 83.5;
+    } catch {
+      return 83.5;
+    }
+  }
+
   // Get Contract Owner
   async function fetchOwner() {
     if (!stakingReader) return "";
@@ -386,6 +397,7 @@ export function useContract(signer, provider) {
     fetchPlanEmergency,
     fetchEmergencyMode,
     fetchHasStakedBefore,
+    fetchUSDtoINR,
     fetchOwner,
     fetchPairAddress,
     fetchPriceFeedAddress,

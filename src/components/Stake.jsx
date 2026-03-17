@@ -101,7 +101,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
           💰 CrypPay Stake
         </h1>
         <p className="text-gray-400 text-sm">
-          Select plan → enter amount → stake CRP tokens securely
+          Select Plan → Enter Token Amount → Stake CrypPay (CRP) Securely
         </p>
       </div>
 
@@ -117,7 +117,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
         )}
 
         <label className="text-gray-400 text-xs block mb-1">
-          Amount to Stake (CRP)
+          Amount to Stake CrypPay (CRP)
         </label>
 
         <div className="flex gap-2">
@@ -226,7 +226,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                 <div className="flex justify-between border-t border-gray-700 pt-2 mt-2">
                   <span className="text-gray-400">Min Stake</span>
                   <span className="text-yellow-400 font-semibold">
-                    {minAmt.toLocaleString()} CRP
+                    {minAmt.toLocaleString()} CryPay (CRP)
                   </span>
                 </div>
 
@@ -240,21 +240,21 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                   </p>
                   <div className="space-y-1 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Staking Amount</span>
+                      <span className="text-gray-400">Stake Amount</span>
                       <span className="text-white font-semibold">
-                        {userAmount.toLocaleString()} CRP
+                        {userAmount.toLocaleString()} CryPay (CRP)
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Monthly Return</span>
                       <span className="text-green-400 font-semibold">
-                        {monthlyReturn.toLocaleString()} CRP
+                        {monthlyReturn.toLocaleString()} CryPay (CRP)
                       </span>
                     </div>
                     <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
                       <span className="text-gray-400">Total Return ({lockDisplay})</span>
                       <span className="text-yellow-400 font-bold">
-                        {totalReturn.toLocaleString()} CRP
+                        {totalReturn.toLocaleString()} CryPay (CRP)
                       </span>
                     </div>
                   </div>
@@ -287,7 +287,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
       {plans.filter(p => p.active).length === 0 && (
         <div className="text-center py-20 text-gray-400">
           <p className="text-4xl mb-3">📭</p>
-          <p>Koi active plan nahi mila</p>
+          <p>No active plans available</p>
         </div>
       )}
 

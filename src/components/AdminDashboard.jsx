@@ -17,6 +17,8 @@ export default function AdminDashboard({ account, signer, provider }) {
     fetchPlanPaused,
     fetchPlanEmergency,
     fetchContractEvents,
+    fetchUserStakes,
+    fetchClaimable,
     fetchOwner,
     fetchPairAddress,
     fetchPriceFeedAddress,
@@ -24,6 +26,7 @@ export default function AdminDashboard({ account, signer, provider }) {
     fetchTWAPPrice,
     fetchCrypPayToken,
     transferOwnership,
+    fetchUSDtoINR,
   } = useContract(signer, provider);
 
   // ─── State ───────────────────────────────────────────
@@ -53,6 +56,14 @@ export default function AdminDashboard({ account, signer, provider }) {
   const [twapPrice, setTwapPrice] = useState("0");
   const [tokenAddress, setTokenAddress] = useState("");
   const [newOwnerAddress, setNewOwnerAddress] = useState("");
+  const [searchWallet, setSearchWallet] = useState("");
+  const [searchedStakes, setSearchedStakes] = useState([]);
+  const [searchedClaimables, setSearchedClaimables] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchedAddress, setSearchedAddress] = useState("");
+  const [allUsersData, setAllUsersData] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usdToInr, setUsdToInr] = useState(83.5);
 
   // Create Plan Form
   const [planForm, setPlanForm] = useState({
@@ -91,7 +102,7 @@ export default function AdminDashboard({ account, signer, provider }) {
   // ─── Load Data ────────────────────────────────────────
   async function loadData() {
     try {
-      const [p, s, price, tvl, distributed, withdrawn, owner, pair, feed, isPaused, twap, crpToken] = await Promise.all([
+      const [p, s, price, tvl, distributed, withdrawn, owner, pair, feed, isPaused, twap, crpToken, inrRate] = await Promise.all([
         fetchPlans(),
         fetchStats(),
         fetchTokenPrice(),
@@ -104,6 +115,7 @@ export default function AdminDashboard({ account, signer, provider }) {
         fetchPaused(),
         fetchTWAPPrice(),
         fetchCrypPayToken(),
+        fetchUSDtoINR(),
       ]);
       setPlans(p);
       setStats(s);
@@ -117,6 +129,7 @@ export default function AdminDashboard({ account, signer, provider }) {
       setProtocolPaused(isPaused);
       setTwapPrice(twap);
       setTokenAddress(crpToken);
+      setUsdToInr(inrRate);
 
       const reader = getReader();
       const em = await reader.emergencyMode();
@@ -169,6 +182,13 @@ export default function AdminDashboard({ account, signer, provider }) {
       return "0";
     }
   }
+
+  // INR Value helper
+  const crpToINR = (amount) => {
+    const usdPrice = Number(tokenPrice);
+    if (usdPrice <= 0) return "N/A";
+    return (amount * usdPrice * usdToInr).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  };
 
   // ─── Admin Functions ──────────────────────────────────
 
@@ -337,6 +357,7 @@ export default function AdminDashboard({ account, signer, provider }) {
           <p className="text-yellow-400 text-xl font-bold mt-1">
             {Number(stats.totalStaked).toLocaleString()} CRP
           </p>
+          <p className="text-gray-500 text-xs">≈ ₹{crpToINR(Number(stats.totalStaked))}</p>
         </div>
         <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
           <p className="text-gray-400 text-xs">Total Stakers</p>
@@ -380,6 +401,48 @@ export default function AdminDashboard({ account, signer, provider }) {
         </div>
       </div>
 
+      {/* Today's Overview */}
+      <div className="bg-gray-800 border border-yellow-500/30 rounded-xl p-5 mb-8">
+        <h2 className="text-yellow-400 font-bold text-lg mb-4">📅 Today's Overview</h2>
+        {(() => {
+          const todayStart = Math.floor(new Date().setHours(0,0,0,0) / 1000);
+          const todayEvts = txEvents.filter(e => e.timestamp >= todayStart);
+          const todayStakes = todayEvts.filter(e => e.type === "Stake");
+          const todayClaims = todayEvts.filter(e => e.type === "Claim");
+          const todayWithdraws = todayEvts.filter(e => e.type === "Withdraw" || e.type === "Emergency");
+          const todayStakedCRP = todayStakes.reduce((s, e) => s + Number(e.amount), 0);
+          const todayClaimedCRP = todayClaims.reduce((s, e) => s + Number(e.amount), 0);
+          const todayWithdrawnCRP = todayWithdraws.reduce((s, e) => s + Number(e.amount), 0);
+          return (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <p className="text-gray-400 text-xs mb-1">Stakes Today</p>
+                <p className="text-green-400 font-bold text-lg">{todayStakes.length}</p>
+                <p className="text-gray-500 text-xs">{todayStakedCRP.toLocaleString()} CRP</p>
+              </div>
+              <div className="text-center">
+                <p className="text-gray-400 text-xs mb-1">Claims Today</p>
+                <p className="text-yellow-400 font-bold text-lg">{todayClaims.length}</p>
+                <p className="text-gray-500 text-xs">{todayClaimedCRP.toLocaleString()} CRP</p>
+              </div>
+              <div className="text-center">
+                <p className="text-gray-400 text-xs mb-1">Withdrawals Today</p>
+                <p className="text-orange-400 font-bold text-lg">{todayWithdraws.length}</p>
+                <p className="text-gray-500 text-xs">{todayWithdrawnCRP.toLocaleString()} CRP</p>
+              </div>
+              <div className="text-center">
+                <p className="text-gray-400 text-xs mb-1">Total CRP Moved</p>
+                <p className="text-white font-bold text-lg">{(todayStakedCRP + todayClaimedCRP + todayWithdrawnCRP).toLocaleString()}</p>
+                <p className="text-gray-500 text-xs">CRP</p>
+              </div>
+            </div>
+          );
+        })()}
+        {txEvents.length === 0 && (
+          <p className="text-gray-500 text-xs text-center mt-3">Load events from History tab to see today's data</p>
+        )}
+      </div>
+
       {/* Emergency Mode Banner */}
       {emergencyMode && (
         <div className="bg-red-900/50 border border-red-500 rounded-xl p-4 mb-6 flex justify-between items-center">
@@ -395,8 +458,8 @@ export default function AdminDashboard({ account, signer, provider }) {
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-gray-700 pb-2">
         {(isFullAdmin
-          ? ["plans", "create", "analytics", "history", "settings", "emergency"]
-          : ["plans", "analytics", "history"]
+          ? ["plans", "create", "analytics", "history", "users", "settings", "emergency"]
+          : ["plans", "analytics", "history", "users"]
         ).map((tab) => (
           <button
             key={tab}
@@ -411,6 +474,7 @@ export default function AdminDashboard({ account, signer, provider }) {
             {tab === "create" && "➕ Create Plan"}
             {tab === "analytics" && "📊 Analytics"}
             {tab === "history" && "📜 History"}
+            {tab === "users" && "👤 Users"}
             {tab === "settings" && "⚙️ Settings"}
             {tab === "emergency" && "🚨 Emergency"}
           </button>
@@ -421,7 +485,7 @@ export default function AdminDashboard({ account, signer, provider }) {
       {activeTab === "plans" && (
         <div className="space-y-4">
           {plans.length === 0 ? (
-            <p className="text-gray-400 text-center py-10">Koi plan nahi mila</p>
+            <p className="text-gray-400 text-center py-10">No plans found</p>
           ) : (
             plans.map((plan, index) => (
               <div key={index} className="bg-gray-800 border border-gray-700 rounded-xl p-5">
@@ -499,6 +563,7 @@ export default function AdminDashboard({ account, signer, provider }) {
                   <div>
                     <p className="text-gray-400 text-xs">Total Staked</p>
                     <p className="text-yellow-400 font-bold">{Number(planStakedAmounts[index] || 0).toLocaleString()} CRP</p>
+                    <p className="text-gray-500 text-xs">≈ ₹{crpToINR(Number(planStakedAmounts[index] || 0))}</p>
                   </div>
                 </div>
               </div>
@@ -555,7 +620,7 @@ export default function AdminDashboard({ account, signer, provider }) {
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
             <h2 className="text-white font-bold text-lg mb-5">📋 Per-Plan Breakdown</h2>
             {plans.length === 0 ? (
-              <p className="text-gray-400 text-center py-6">Koi plan nahi mila</p>
+              <p className="text-gray-400 text-center py-6">No plans found</p>
             ) : (
               <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden">
                 <div className="grid grid-cols-6 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
@@ -691,31 +756,74 @@ export default function AdminDashboard({ account, signer, provider }) {
                 </div>
               </div>
 
-              {/* Today's Transactions */}
+              {/* Today's Transactions — Detailed */}
               {(() => {
                 const todayStart = Math.floor(new Date().setHours(0,0,0,0) / 1000);
                 const todayEvents = txEvents.filter(e => e.timestamp >= todayStart);
+                const todayStakedCRP = todayEvents.filter(e => e.type === "Stake").reduce((s, e) => s + Number(e.amount), 0);
+                const todayClaimedCRP = todayEvents.filter(e => e.type === "Claim").reduce((s, e) => s + Number(e.amount), 0);
+                const todayWithdrawnCRP = todayEvents.filter(e => e.type === "Withdraw" || e.type === "Emergency").reduce((s, e) => s + Number(e.amount), 0);
+                const todayWallets = [...new Set(todayEvents.map(e => e.user))].length;
                 return (
                   <div className="bg-gray-800 border border-yellow-500/30 rounded-xl p-5">
-                    <h3 className="text-yellow-400 font-bold mb-3">📅 Today's Activity ({todayEvents.length} transactions)</h3>
+                    <h3 className="text-yellow-400 font-bold mb-4">📅 Today's Activity ({todayEvents.length} transactions)</h3>
+
+                    {/* Today Summary */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                      <div className="bg-gray-900 rounded-lg p-3 text-center">
+                        <p className="text-gray-400 text-xs">Transactions</p>
+                        <p className="text-white font-bold">{todayEvents.length}</p>
+                      </div>
+                      <div className="bg-gray-900 rounded-lg p-3 text-center">
+                        <p className="text-gray-400 text-xs">Staked</p>
+                        <p className="text-green-400 font-bold">{todayStakedCRP.toLocaleString()} CRP</p>
+                      </div>
+                      <div className="bg-gray-900 rounded-lg p-3 text-center">
+                        <p className="text-gray-400 text-xs">Claimed</p>
+                        <p className="text-yellow-400 font-bold">{todayClaimedCRP.toLocaleString()} CRP</p>
+                      </div>
+                      <div className="bg-gray-900 rounded-lg p-3 text-center">
+                        <p className="text-gray-400 text-xs">Withdrawn</p>
+                        <p className="text-orange-400 font-bold">{todayWithdrawnCRP.toLocaleString()} CRP</p>
+                      </div>
+                      <div className="bg-gray-900 rounded-lg p-3 text-center">
+                        <p className="text-gray-400 text-xs">Wallets</p>
+                        <p className="text-blue-400 font-bold">{todayWallets}</p>
+                      </div>
+                    </div>
+
                     {todayEvents.length === 0 ? (
-                      <p className="text-gray-400 text-sm">Aaj koi transaction nahi hua</p>
+                      <p className="text-gray-400 text-sm">No transactions today</p>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden">
+                        <div className="grid grid-cols-7 gap-2 px-4 py-2 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
+                          <span>Type</span>
+                          <span>Wallet</span>
+                          <span>Amount</span>
+                          <span>Plan</span>
+                          <span>Time</span>
+                          <span>Block</span>
+                          <span className="text-right">Tx Hash</span>
+                        </div>
                         {todayEvents.map((evt, idx) => (
-                          <div key={idx} className="flex justify-between items-center bg-gray-900 rounded-lg px-4 py-2">
-                            <div className="flex gap-3 items-center">
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                                evt.type === "Stake" ? "bg-green-900 text-green-400" :
-                                evt.type === "Claim" ? "bg-yellow-900 text-yellow-400" :
-                                evt.type === "Withdraw" ? "bg-orange-900 text-orange-400" :
-                                "bg-red-900 text-red-400"
-                              }`}>{evt.type}</span>
-                              <span className="text-white text-xs">{evt.user?.slice(0,6)}...{evt.user?.slice(-4)}</span>
-                              <span className="text-gray-400 text-xs">{Number(evt.amount).toLocaleString()} CRP</span>
-                            </div>
-                            <a href={`https://testnet.bscscan.com/tx/${evt.txHash}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline">
-                              View 🔗
+                          <div key={idx} className="grid grid-cols-7 gap-2 px-4 py-2 text-xs border-b border-gray-700/50 items-center">
+                            <span className={`px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${
+                              evt.type === "Stake" ? "bg-green-900 text-green-400" :
+                              evt.type === "Claim" ? "bg-yellow-900 text-yellow-400" :
+                              evt.type === "Withdraw" ? "bg-orange-900 text-orange-400" :
+                              "bg-red-900 text-red-400"
+                            }`}>{evt.type}</span>
+                            <a href={`https://testnet.bscscan.com/address/${evt.user}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline truncate">
+                              {evt.user?.slice(0,6)}...{evt.user?.slice(-4)}
+                            </a>
+                            <span className="text-white font-semibold">{Number(evt.amount).toLocaleString()} CRP</span>
+                            <span className="text-gray-400 truncate">{evt.planName || "—"}</span>
+                            <span className="text-gray-300">
+                              {evt.timestamp ? new Date(evt.timestamp * 1000).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                            </span>
+                            <span className="text-gray-500">{evt.blockNumber}</span>
+                            <a href={`https://testnet.bscscan.com/tx/${evt.txHash}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline text-right truncate">
+                              {evt.txHash?.slice(0,8)}...
                             </a>
                           </div>
                         ))}
@@ -777,6 +885,266 @@ export default function AdminDashboard({ account, signer, provider }) {
                 </div>
               </div>
 
+            </>
+          )}
+
+        </div>
+      )}
+
+      {/* ── TAB: USERS ── */}
+      {activeTab === "users" && (
+        <div className="space-y-6">
+
+          {/* Search Bar */}
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
+            <h2 className="text-white font-bold text-lg mb-4">👤 User Lookup</h2>
+            <div className="flex gap-3 mb-4">
+              <input
+                type="text"
+                value={searchWallet}
+                onChange={(e) => setSearchWallet(e.target.value)}
+                placeholder="Enter wallet address (0x...)"
+                className="flex-1 bg-gray-900 border border-gray-600 rounded px-4 py-2 text-white text-sm focus:outline-none focus:border-yellow-500"
+              />
+              <button
+                onClick={async () => {
+                  if (!searchWallet || !searchWallet.startsWith("0x")) {
+                    toast.error("Please enter a valid wallet address!");
+                    return;
+                  }
+                  setSearchLoading(true);
+                  try {
+                    const stks = await fetchUserStakes(searchWallet);
+                    setSearchedStakes(stks);
+                    setSearchedAddress(searchWallet);
+                    const cls = [];
+                    for (let i = 0; i < stks.length; i++) {
+                      const c = await fetchClaimable(searchWallet, i);
+                      cls.push(c);
+                    }
+                    setSearchedClaimables(cls);
+                  } catch (err) {
+                    console.error(err);
+                    toast.error("Failed to fetch user data");
+                  } finally {
+                    setSearchLoading(false);
+                  }
+                }}
+                disabled={searchLoading}
+                className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-2 rounded font-semibold text-sm transition disabled:opacity-50"
+              >
+                {searchLoading ? "Searching..." : "🔍 Search"}
+              </button>
+            </div>
+
+            {/* Load All Users Button */}
+            <button
+              onClick={async () => {
+                setUsersLoading(true);
+                try {
+                  // Get unique wallets from events
+                  let wallets = [...new Set(txEvents.map(e => e.user))];
+
+                  // If no events loaded, try to get from search
+                  if (wallets.length === 0) {
+                    toast.error("Load events from History tab first to see all users");
+                    setUsersLoading(false);
+                    return;
+                  }
+
+                  const usersData = [];
+                  for (const wallet of wallets) {
+                    try {
+                      const stks = await fetchUserStakes(wallet);
+                      const totalStaked = stks.reduce((s, st) => s + Number(ethers.formatUnits(st.amount || 0, 18)), 0);
+                      const totalClaimed = stks.reduce((s, st) => s + Number(ethers.formatUnits(st.claimed || 0, 18)), 0);
+                      const activeCount = stks.filter(s => !s.withdrawn).length;
+                      const withdrawnCount = stks.filter(s => s.withdrawn).length;
+                      usersData.push({
+                        wallet,
+                        stakes: stks,
+                        totalStaked,
+                        totalClaimed,
+                        stakeCount: stks.length,
+                        activeCount,
+                        withdrawnCount,
+                      });
+                    } catch {
+                      continue;
+                    }
+                  }
+                  setAllUsersData(usersData);
+                } catch (err) {
+                  console.error(err);
+                  toast.error("Failed to load users");
+                } finally {
+                  setUsersLoading(false);
+                }
+              }}
+              disabled={usersLoading}
+              className="w-full bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded font-semibold text-sm transition disabled:opacity-50"
+            >
+              {usersLoading ? "Loading Users..." : "📋 Load All Users (from Events)"}
+            </button>
+          </div>
+
+          {/* All Users List */}
+          {allUsersData.length > 0 && (
+            <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+              <div className="px-5 py-3 bg-gray-900 border-b border-gray-700">
+                <h3 className="text-white font-bold">All Stakers ({allUsersData.length} users)</h3>
+              </div>
+
+              <div className="grid grid-cols-7 gap-2 px-5 py-2 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
+                <span>#</span>
+                <span>Wallet</span>
+                <span>Total Staked</span>
+                <span>Total Claimed</span>
+                <span>Stakes</span>
+                <span>Active</span>
+                <span className="text-right">INR Value</span>
+              </div>
+
+              {allUsersData.map((user, idx) => (
+                <div
+                  key={idx}
+                  className="grid grid-cols-7 gap-2 px-5 py-3 text-sm border-b border-gray-700/50 items-center cursor-pointer hover:bg-gray-700/30 transition"
+                  onClick={() => {
+                    setSearchWallet(user.wallet);
+                    setSearchedAddress(user.wallet);
+                    setSearchedStakes(user.stakes);
+                    setSearchedClaimables([]);
+                  }}
+                >
+                  <span className="text-gray-500 text-xs">{idx + 1}</span>
+                  <a href={`https://testnet.bscscan.com/address/${user.wallet}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 text-xs hover:underline truncate">
+                    {user.wallet.slice(0,6)}...{user.wallet.slice(-4)}
+                  </a>
+                  <span className="text-yellow-400 font-semibold text-xs">{user.totalStaked.toLocaleString()} CRP</span>
+                  <span className="text-green-400 text-xs">{user.totalClaimed.toLocaleString()} CRP</span>
+                  <span className="text-white text-xs">{user.stakeCount}</span>
+                  <span className="text-blue-400 text-xs">{user.activeCount} active</span>
+                  <span className="text-gray-400 text-xs text-right">₹{crpToINR(user.totalStaked)}</span>
+                </div>
+              ))}
+
+              <div className="grid grid-cols-7 gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700">
+                <span className="text-gray-400">Total</span>
+                <span className="text-gray-400">{allUsersData.length} users</span>
+                <span className="text-yellow-400">{allUsersData.reduce((s, u) => s + u.totalStaked, 0).toLocaleString()} CRP</span>
+                <span className="text-green-400">{allUsersData.reduce((s, u) => s + u.totalClaimed, 0).toLocaleString()} CRP</span>
+                <span className="text-white">{allUsersData.reduce((s, u) => s + u.stakeCount, 0)}</span>
+                <span className="text-blue-400">{allUsersData.reduce((s, u) => s + u.activeCount, 0)} active</span>
+                <span className="text-gray-400 text-right">₹{crpToINR(allUsersData.reduce((s, u) => s + u.totalStaked, 0))}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Individual User Detail */}
+          {searchedAddress && (
+            <>
+              <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className="text-white font-bold">Wallet: <a href={`https://testnet.bscscan.com/address/${searchedAddress}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">{searchedAddress.slice(0,10)}...{searchedAddress.slice(-8)}</a></h3>
+                    <p className="text-gray-400 text-xs mt-1">Total Stakes: {searchedStakes.length}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                  <div className="bg-gray-900 rounded-lg p-3 text-center">
+                    <p className="text-gray-400 text-xs">Total Staked</p>
+                    <p className="text-yellow-400 font-bold">
+                      {searchedStakes.reduce((s, st) => s + Number(ethers.formatUnits(st.amount || 0, 18)), 0).toLocaleString()} CRP
+                    </p>
+                    <p className="text-gray-500 text-xs">≈ ₹{crpToINR(searchedStakes.reduce((s, st) => s + Number(ethers.formatUnits(st.amount || 0, 18)), 0))}</p>
+                  </div>
+                  <div className="bg-gray-900 rounded-lg p-3 text-center">
+                    <p className="text-gray-400 text-xs">Total Claimed</p>
+                    <p className="text-green-400 font-bold">
+                      {searchedStakes.reduce((s, st) => s + Number(ethers.formatUnits(st.claimed || 0, 18)), 0).toLocaleString()} CRP
+                    </p>
+                    <p className="text-gray-500 text-xs">≈ ₹{crpToINR(searchedStakes.reduce((s, st) => s + Number(ethers.formatUnits(st.claimed || 0, 18)), 0))}</p>
+                  </div>
+                  <div className="bg-gray-900 rounded-lg p-3 text-center">
+                    <p className="text-gray-400 text-xs">Claimable Now</p>
+                    <p className="text-yellow-400 font-bold">
+                      {searchedClaimables.reduce((s, c) => s + Number(c || 0), 0).toLocaleString()} CRP
+                    </p>
+                  </div>
+                  <div className="bg-gray-900 rounded-lg p-3 text-center">
+                    <p className="text-gray-400 text-xs">Active Stakes</p>
+                    <p className="text-white font-bold">
+                      {searchedStakes.filter(s => !s.withdrawn).length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {searchedStakes.length > 0 && (
+                <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
+                  <div className="grid grid-cols-9 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
+                    <span>#</span>
+                    <span>Plan</span>
+                    <span>Staked</span>
+                    <span>Claimed</span>
+                    <span>Claimable</span>
+                    <span>Start</span>
+                    <span>Unlock</span>
+                    <span>Status</span>
+                    <span className="text-right">INR Value</span>
+                  </div>
+
+                  {searchedStakes.map((stake, i) => {
+                    const planId = Number(stake.planId);
+                    const plan = plans[planId];
+                    const planName = plan ? plan.name : `Plan #${planId}`;
+                    const stakedAmt = Number(ethers.formatUnits(stake.amount || 0, 18));
+                    const claimedAmt = Number(ethers.formatUnits(stake.claimed || 0, 18));
+                    const claimableAmt = Number(searchedClaimables[i] || 0);
+                    const isWithdrawn = stake.withdrawn;
+                    const unlocked = Date.now() / 1000 >= Number(stake.unlockTime);
+                    const progressPercent = stakedAmt > 0 ? (claimedAmt / stakedAmt) * 100 : 0;
+                    const fmtD = (ts) => new Date(Number(ts) * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+                    return (
+                      <div key={i} className={`grid grid-cols-9 gap-2 px-5 py-3 text-sm border-b border-gray-700/50 items-center ${isWithdrawn ? "opacity-50" : ""}`}>
+                        <span className="text-gray-500 text-xs">{i + 1}</span>
+                        <span className="text-yellow-400 font-semibold text-xs truncate" title={planName}>{planName}</span>
+                        <span className="text-white font-semibold text-xs">{stakedAmt.toLocaleString()}</span>
+                        <div>
+                          <span className="text-green-400 text-xs block">{claimedAmt.toLocaleString()}</span>
+                          <span className="text-gray-500 text-xs">{progressPercent.toFixed(1)}%</span>
+                        </div>
+                        <span className="text-yellow-400 text-xs font-semibold">{claimableAmt.toLocaleString()}</span>
+                        <span className="text-gray-300 text-xs">{fmtD(stake.startTime)}</span>
+                        <span className="text-gray-300 text-xs">{fmtD(stake.unlockTime)}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${
+                          isWithdrawn ? "bg-gray-700 text-gray-400"
+                            : progressPercent >= 100 ? "bg-yellow-900 text-yellow-400"
+                            : unlocked ? "bg-green-900 text-green-400"
+                            : "bg-blue-900 text-blue-400"
+                        }`}>
+                          {isWithdrawn ? "Withdrawn" : progressPercent >= 100 ? "Claimed" : unlocked ? "Unlocked" : "Locked"}
+                        </span>
+                        <span className="text-gray-400 text-xs text-right">₹{crpToINR(stakedAmt)}</span>
+                      </div>
+                    );
+                  })}
+
+                  <div className="grid grid-cols-9 gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700">
+                    <span className="text-gray-400">Total</span>
+                    <span className="text-gray-400">{searchedStakes.length} stakes</span>
+                    <span className="text-white">{searchedStakes.reduce((s, st) => s + Number(ethers.formatUnits(st.amount || 0, 18)), 0).toLocaleString()}</span>
+                    <span className="text-green-400">{searchedStakes.reduce((s, st) => s + Number(ethers.formatUnits(st.claimed || 0, 18)), 0).toLocaleString()}</span>
+                    <span className="text-yellow-400">{searchedClaimables.reduce((s, c) => s + Number(c || 0), 0).toLocaleString()}</span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span className="text-gray-400 text-right">₹{crpToINR(searchedStakes.reduce((s, st) => s + Number(ethers.formatUnits(st.amount || 0, 18)), 0))}</span>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
