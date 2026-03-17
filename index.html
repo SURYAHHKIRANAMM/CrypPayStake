@@ -65,6 +65,80 @@
 
     <div id="root"></div>
 
+    <!-- RainbowKit Mobile Fix — MUST run before any module scripts -->
+    <script>
+      (function() {
+        try {
+          // Fix: Mobile wallets inject incomplete ethereum provider
+          if (typeof window !== "undefined" && window.ethereum) {
+            if (typeof window.ethereum.name === "undefined") {
+              window.ethereum.name = "";
+            }
+            if (!window.ethereum.providerInfo) {
+              window.ethereum.providerInfo = { name: "" };
+            }
+            if (typeof window.ethereum.isMetaMask === "undefined") {
+              window.ethereum.isMetaMask = false;
+            }
+          }
+
+          // Fix: Ensure navigator.userAgent is always a string
+          if (typeof navigator !== "undefined" && !navigator.userAgent) {
+            Object.defineProperty(navigator, "userAgent", {
+              value: "Mozilla/5.0",
+              configurable: true,
+              writable: true,
+            });
+          }
+
+          // Fix: Patch String prototype for undefined values in RainbowKit
+          var origToLowerCase = String.prototype.toLowerCase;
+          String.prototype.toLowerCase = function() {
+            if (this === undefined || this === null) return "";
+            return origToLowerCase.call(this);
+          };
+
+          // Fix: Protect against undefined.toLowerCase in wallet detection
+          if (typeof window !== "undefined") {
+            var handler = {
+              get: function(target, prop) {
+                var val = Reflect.get(target, prop);
+                if (val === undefined && (prop === "name" || prop === "rdns" || prop === "uuid")) {
+                  return "";
+                }
+                return val;
+              }
+            };
+
+            // Wrap ethereum providers if they exist
+            if (window.ethereum && window.ethereum.providers) {
+              window.ethereum.providers = window.ethereum.providers.map(function(p) {
+                if (p && typeof p === "object") {
+                  if (typeof p.name === "undefined") p.name = "";
+                  if (typeof p.rdns === "undefined") p.rdns = "";
+                  if (!p.info) p.info = { name: "", rdns: "", uuid: "" };
+                  if (typeof p.info.name === "undefined") p.info.name = "";
+                  if (typeof p.info.rdns === "undefined") p.info.rdns = "";
+                }
+                return p;
+              });
+            }
+
+            // Fix EIP-6963 provider announcements
+            var origDispatchEvent = window.dispatchEvent;
+            window.addEventListener("eip6963:announceProvider", function(event) {
+              if (event && event.detail && event.detail.info) {
+                if (typeof event.detail.info.name === "undefined") event.detail.info.name = "";
+                if (typeof event.detail.info.rdns === "undefined") event.detail.info.rdns = "";
+              }
+            }, true);
+          }
+        } catch(e) {
+          console.warn("Polyfill error:", e);
+        }
+      })();
+    </script>
+
     <script type="module" src="/src/main.jsx"></script>
 
   </body>
