@@ -11,11 +11,19 @@ export default defineConfig({
         if (code.includes("toLowerCase")) {
           return code.replace(
             /(\w+)\.toLowerCase\(\)/g,
-            '(($1)?.toLowerCase?.()??"")'
+            '(($1)?.toLowerCase?.() ?? "")'
           );
         }
         return code;
       },
     },
   ],
+
+  define: {
+    global: "globalThis",
+    "process.env": {},
+    process: {
+      env: {},
+    },
+  },
 });

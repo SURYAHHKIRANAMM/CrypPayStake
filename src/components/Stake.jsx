@@ -6,7 +6,6 @@ import { useBalance } from "../hooks/useBalance";
 import APRCalculator from "./APRCalculator";
 
 export default function Stake({ account, signer, provider, connectWallet }) {
-
   const { fetchPlans, stakeTokens, approveTokens } = useContract(signer, provider);
   const balance = useBalance(account, provider);
 
@@ -18,20 +17,35 @@ export default function Stake({ account, signer, provider, connectWallet }) {
   const [showCalculator, setShowCalculator] = useState(false);
 
   useEffect(() => {
-    if (!provider) return;
-    const loadPlans = async () => {
+    if (!provider) {
+      setPlans([]);
+      return;
+    }
+
+    let ignore = false;
+
+    async function loadPlans() {
       try {
         const data = await fetchPlans();
-        setPlans(data);
+        if (!ignore) {
+          setPlans(data);
+        }
       } catch (err) {
         console.error("Plan load error:", err);
+        if (!ignore) {
+          setPlans([]);
+        }
       }
-    };
+    }
+
     loadPlans();
-  }, [provider]);
+
+    return () => {
+      ignore = true;
+    };
+  }, [provider, fetchPlans]);
 
   const handleStake = async (planId, minTokenAmount) => {
-
     if (!account) {
       connectWallet();
       return;
@@ -54,7 +68,6 @@ export default function Stake({ account, signer, provider, connectWallet }) {
     }
 
     try {
-
       setLoading(true);
       setLoadingPlanId(planId);
 
@@ -82,11 +95,10 @@ export default function Stake({ account, signer, provider, connectWallet }) {
 
       setAmount("");
       setSelectedPlan(null);
-
     } catch (err) {
       toast.dismiss();
       console.error(err);
-      toast.error(err?.reason || "Transaction failed ❌");
+      toast.error(err?.reason || err?.shortMessage || "Transaction failed ❌");
     } finally {
       setLoading(false);
       setLoadingPlanId(null);
@@ -95,7 +107,6 @@ export default function Stake({ account, signer, provider, connectWallet }) {
 
   return (
     <div className="max-w-6xl mx-auto px-4">
-
       <div className="text-center mb-10">
         <h1 className="text-3xl font-bold text-yellow-400 mb-2">
           💰 CrypPay Stake
@@ -106,7 +117,6 @@ export default function Stake({ account, signer, provider, connectWallet }) {
       </div>
 
       <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-10 max-w-md mx-auto">
-
         {account && (
           <div className="flex justify-between items-center mb-3">
             <span className="text-gray-400 text-sm">Wallet Balance</span>
@@ -151,37 +161,49 @@ export default function Stake({ account, signer, provider, connectWallet }) {
             <APRCalculator />
           </div>
         )}
-
       </div>
 
       <div className="flex flex-wrap justify-center gap-6">
-
         {plans.map((plan, i) => {
-
           if (!plan.active) return null;
 
           const lockSeconds = Number(plan.lockPeriod);
-          const lockDisplay = lockSeconds >= 2592000 ? `${(lockSeconds / 2592000).toFixed(0)} Months`
-            : lockSeconds >= 86400 ? `${(lockSeconds / 86400).toFixed(0)} Days`
-            : lockSeconds >= 3600 ? `${(lockSeconds / 3600).toFixed(0)} Hours`
-            : lockSeconds >= 60 ? `${(lockSeconds / 60).toFixed(0)} Minutes`
-            : `${lockSeconds} Seconds`;
+          const lockDisplay =
+            lockSeconds >= 2592000
+              ? `${(lockSeconds / 2592000).toFixed(0)} Months`
+              : lockSeconds >= 86400
+              ? `${(lockSeconds / 86400).toFixed(0)} Days`
+              : lockSeconds >= 3600
+              ? `${(lockSeconds / 3600).toFixed(0)} Hours`
+              : lockSeconds >= 60
+              ? `${(lockSeconds / 60).toFixed(0)} Minutes`
+              : `${lockSeconds} Seconds`;
+
           const intervalSeconds = Number(plan.claimInterval);
-          const intervalDisplay = intervalSeconds >= 86400 ? `${(intervalSeconds / 86400).toFixed(0)} Days`
-            : intervalSeconds >= 3600 ? `${(intervalSeconds / 3600).toFixed(0)} Hours`
-            : intervalSeconds >= 60 ? `${(intervalSeconds / 60).toFixed(0)} Minutes`
-            : `${intervalSeconds} Seconds`;
+          const intervalDisplay =
+            intervalSeconds >= 86400
+              ? `${(intervalSeconds / 86400).toFixed(0)} Days`
+              : intervalSeconds >= 3600
+              ? `${(intervalSeconds / 3600).toFixed(0)} Hours`
+              : intervalSeconds >= 60
+              ? `${(intervalSeconds / 60).toFixed(0)} Minutes`
+              : `${intervalSeconds} Seconds`;
+
           const releasePercent = Number(plan.releasePercent);
           const minAmt = Number(ethers.formatUnits(plan.minTokenAmount, 18));
           const isSelected = selectedPlan === i;
 
           const userAmount = Number(amount) || 0;
-          const monthlyReturn = userAmount > 0 ? (userAmount * releasePercent / 100) : 0;
-          const totalIntervals = lockSeconds > 0 && intervalSeconds > 0 ? Math.floor(lockSeconds / intervalSeconds) : 0;
-          const totalReturn = userAmount > 0 ? (monthlyReturn * totalIntervals) : 0;
+          const monthlyReturn =
+            userAmount > 0 ? (userAmount * releasePercent) / 100 : 0;
+          const totalIntervals =
+            lockSeconds > 0 && intervalSeconds > 0
+              ? Math.floor(lockSeconds / intervalSeconds)
+              : 0;
+          const totalReturn =
+            userAmount > 0 ? monthlyReturn * totalIntervals : 0;
 
           return (
-
             <div
               key={i}
               onClick={() => setSelectedPlan(i)}
@@ -191,7 +213,6 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                   : "border-gray-700 hover:border-yellow-500/40"
               }`}
             >
-
               <div className="flex justify-between items-start mb-4">
                 <h3 className="text-yellow-400 font-bold text-base leading-tight">
                   {plan.name}
@@ -203,7 +224,6 @@ export default function Stake({ account, signer, provider, connectWallet }) {
               </div>
 
               <div className="space-y-2 text-sm mb-5">
-
                 <div className="flex justify-between">
                   <span className="text-gray-400">Lock Period</span>
                   <span className="text-white font-semibold">
@@ -229,10 +249,8 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                     {minAmt.toLocaleString()} CryPay (CRP)
                   </span>
                 </div>
-
               </div>
 
-              {/* Expected Returns Preview */}
               {userAmount > 0 && (
                 <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 mb-4">
                   <p className="text-gray-400 text-xs mb-2 font-semibold">
@@ -252,7 +270,9 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                       </span>
                     </div>
                     <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
-                      <span className="text-gray-400">Total Return ({lockDisplay})</span>
+                      <span className="text-gray-400">
+                        Total Return ({lockDisplay})
+                      </span>
                       <span className="text-yellow-400 font-bold">
                         {totalReturn.toLocaleString()} CryPay (CRP)
                       </span>
@@ -275,22 +295,17 @@ export default function Stake({ account, signer, provider, connectWallet }) {
                     : "🚀 Start Stake Now"}
                 </button>
               )}
-
             </div>
-
           );
-
         })}
-
       </div>
 
-      {plans.filter(p => p.active).length === 0 && (
+      {plans.filter((p) => p.active).length === 0 && (
         <div className="text-center py-20 text-gray-400">
           <p className="text-4xl mb-3">📭</p>
           <p>No active plans available</p>
         </div>
       )}
-
     </div>
   );
 }

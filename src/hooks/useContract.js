@@ -1,49 +1,53 @@
+import { useCallback, useMemo } from "react";
 import { ethers } from "ethers";
 import {
   CONTRACT_ADDRESS,
   ABI,
   TOKEN_ADDRESS,
-  TOKEN_ABI
+  TOKEN_ABI,
 } from "../contract/config";
 
 export function useContract(signer, provider) {
+  const stakingReader = useMemo(() => {
+    return provider ? new ethers.Contract(CONTRACT_ADDRESS, ABI, provider) : null;
+  }, [provider]);
 
-  const stakingReader = provider
-    ? new ethers.Contract(CONTRACT_ADDRESS, ABI, provider)
-    : null;
+  const stakingContract = useMemo(() => {
+    return signer ? new ethers.Contract(CONTRACT_ADDRESS, ABI, signer) : null;
+  }, [signer]);
 
-  const stakingContract = signer
-    ? new ethers.Contract(CONTRACT_ADDRESS, ABI, signer)
-    : null;
-
-  const tokenContract = signer
-    ? new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, signer)
-    : null;
+  const tokenContract = useMemo(() => {
+    return signer ? new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, signer) : null;
+  }, [signer]);
 
   // ─── READ FUNCTIONS ────────────────────────────────
 
-  // Fetch All Plans
-  async function fetchPlans() {
+  const fetchPlans = useCallback(async () => {
     if (!stakingReader) return [];
     return await stakingReader.getAllPlans();
-  }
+  }, [stakingReader]);
 
-  // Fetch User Stakes
-  async function fetchUserStakes(userAddress) {
-    if (!stakingReader) return [];
-    return await stakingReader.getUserAllStakes(userAddress);
-  }
+  const fetchUserStakes = useCallback(
+    async (userAddress) => {
+      if (!stakingReader) return [];
+      return await stakingReader.getUserAllStakes(userAddress);
+    },
+    [stakingReader]
+  );
 
-  // Fetch Claimable Amount
-  async function fetchClaimable(userAddress, index) {
-    if (!stakingReader) return "0";
-    const amount = await stakingReader.claimable(userAddress, index);
-    return ethers.formatEther(amount);
-  }
+  const fetchClaimable = useCallback(
+    async (userAddress, index) => {
+      if (!stakingReader) return "0";
+      const amount = await stakingReader.claimable(userAddress, index);
+      return ethers.formatEther(amount);
+    },
+    [stakingReader]
+  );
 
-  // Platform Stats
-  async function fetchStats() {
-    if (!stakingReader) return { totalStaked: "0", totalStakers: "0", maxTVL: "0" };
+  const fetchStats = useCallback(async () => {
+    if (!stakingReader) {
+      return { totalStaked: "0", totalStakers: "0", maxTVL: "0" };
+    }
 
     const [totalStaked, totalStakers, maxTVL] = await Promise.all([
       stakingReader.totalStaked(),
@@ -56,10 +60,9 @@ export function useContract(signer, provider) {
       totalStakers: totalStakers.toString(),
       maxTVL: ethers.formatEther(maxTVL),
     };
-  }
+  }, [stakingReader]);
 
-  // TVL Value in USD
-  async function fetchTVLValue() {
+  const fetchTVLValue = useCallback(async () => {
     if (!stakingReader) return "0";
     try {
       const tvl = await stakingReader.getTVLValue();
@@ -67,10 +70,9 @@ export function useContract(signer, provider) {
     } catch {
       return "0";
     }
-  }
+  }, [stakingReader]);
 
-  // Token Price (Chainlink/TWAP)
-  async function fetchTokenPrice() {
+  const fetchTokenPrice = useCallback(async () => {
     if (!stakingReader) return "0";
     try {
       const price = await stakingReader.getSafeTokenPrice();
@@ -78,10 +80,9 @@ export function useContract(signer, provider) {
     } catch {
       return "0";
     }
-  }
+  }, [stakingReader]);
 
-  // Total Released/Distributed
-  async function fetchTotalDistributed() {
+  const fetchTotalDistributed = useCallback(async () => {
     if (!stakingReader) return "0";
     try {
       const total = await stakingReader.totalReleasedDistributed();
@@ -89,10 +90,9 @@ export function useContract(signer, provider) {
     } catch {
       return "0";
     }
-  }
+  }, [stakingReader]);
 
-  // Total Global Withdrawn
-  async function fetchTotalWithdrawn() {
+  const fetchTotalWithdrawn = useCallback(async () => {
     if (!stakingReader) return "0";
     try {
       const total = await stakingReader.totalGlobalWithdrawn();
@@ -100,83 +100,96 @@ export function useContract(signer, provider) {
     } catch {
       return "0";
     }
-  }
+  }, [stakingReader]);
 
-  // User Stake Count
-  async function fetchUserStakeCount(userAddress) {
-    if (!stakingReader) return "0";
-    try {
-      const count = await stakingReader.userStakeCount(userAddress);
-      return count.toString();
-    } catch {
-      return "0";
-    }
-  }
+  const fetchUserStakeCount = useCallback(
+    async (userAddress) => {
+      if (!stakingReader) return "0";
+      try {
+        const count = await stakingReader.userStakeCount(userAddress);
+        return count.toString();
+      } catch {
+        return "0";
+      }
+    },
+    [stakingReader]
+  );
 
-  // Total Staked in Specific Plan
-  async function fetchTotalStakedInPlan(planId) {
-    if (!stakingReader) return "0";
-    try {
-      const total = await stakingReader.totalStakedInPlan(planId);
-      return ethers.formatEther(total);
-    } catch {
-      return "0";
-    }
-  }
+  const fetchTotalStakedInPlan = useCallback(
+    async (planId) => {
+      if (!stakingReader) return "0";
+      try {
+        const total = await stakingReader.totalStakedInPlan(planId);
+        return ethers.formatEther(total);
+      } catch {
+        return "0";
+      }
+    },
+    [stakingReader]
+  );
 
-  // Projected Total Release for a plan + amount
-  async function fetchProjectedRelease(planId, amount) {
-    if (!stakingReader) return "0";
-    try {
-      const projected = await stakingReader.projectedTotalRelease(planId, ethers.parseEther(amount.toString()));
-      return ethers.formatEther(projected);
-    } catch {
-      return "0";
-    }
-  }
+  const fetchProjectedRelease = useCallback(
+    async (planId, amount) => {
+      if (!stakingReader) return "0";
+      try {
+        const projected = await stakingReader.projectedTotalRelease(
+          planId,
+          ethers.parseEther(amount.toString())
+        );
+        return ethers.formatEther(projected);
+      } catch {
+        return "0";
+      }
+    },
+    [stakingReader]
+  );
 
-  // Plan Paused Status
-  async function fetchPlanPaused(planId) {
-    if (!stakingReader) return false;
-    try {
-      return await stakingReader.planPaused(planId);
-    } catch {
-      return false;
-    }
-  }
+  const fetchPlanPaused = useCallback(
+    async (planId) => {
+      if (!stakingReader) return false;
+      try {
+        return await stakingReader.planPaused(planId);
+      } catch {
+        return false;
+      }
+    },
+    [stakingReader]
+  );
 
-  // Plan Emergency Status
-  async function fetchPlanEmergency(planId) {
-    if (!stakingReader) return false;
-    try {
-      return await stakingReader.planEmergency(planId);
-    } catch {
-      return false;
-    }
-  }
+  const fetchPlanEmergency = useCallback(
+    async (planId) => {
+      if (!stakingReader) return false;
+      try {
+        return await stakingReader.planEmergency(planId);
+      } catch {
+        return false;
+      }
+    },
+    [stakingReader]
+  );
 
-  // Emergency Mode Status
-  async function fetchEmergencyMode() {
+  const fetchEmergencyMode = useCallback(async () => {
     if (!stakingReader) return false;
     try {
       return await stakingReader.emergencyMode();
     } catch {
       return false;
     }
-  }
+  }, [stakingReader]);
 
-  // Has User Staked Before
-  async function fetchHasStakedBefore(userAddress) {
-    if (!stakingReader) return false;
-    try {
-      return await stakingReader.hasStakedBefore(userAddress);
-    } catch {
-      return false;
-    }
-  }
+  const fetchHasStakedBefore = useCallback(
+    async (userAddress) => {
+      if (!stakingReader) return false;
+      try {
+        return await stakingReader.hasStakedBefore(userAddress);
+      } catch {
+        return false;
+      }
+    },
+    [stakingReader]
+  );
 
-  // Fetch Live USD to INR Rate
-  async function fetchUSDtoINR() {
+  const fetchUSDtoINR = useCallback(async () => {
     try {
       const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
       const data = await response.json();
@@ -184,50 +197,45 @@ export function useContract(signer, provider) {
     } catch {
       return 83.5;
     }
-  }
+  }, []);
 
-  // Get Contract Owner
-  async function fetchOwner() {
+  const fetchOwner = useCallback(async () => {
     if (!stakingReader) return "";
     try {
       return await stakingReader.owner();
     } catch {
       return "";
     }
-  }
+  }, [stakingReader]);
 
-  // Get Pair Address
-  async function fetchPairAddress() {
+  const fetchPairAddress = useCallback(async () => {
     if (!stakingReader) return "";
     try {
       return await stakingReader.pairAddress();
     } catch {
       return "";
     }
-  }
+  }, [stakingReader]);
 
-  // Get Price Feed Address
-  async function fetchPriceFeedAddress() {
+  const fetchPriceFeedAddress = useCallback(async () => {
     if (!stakingReader) return "";
     try {
       return await stakingReader.priceFeed();
     } catch {
       return "";
     }
-  }
+  }, [stakingReader]);
 
-  // Get Protocol Paused Status
-  async function fetchPaused() {
+  const fetchPaused = useCallback(async () => {
     if (!stakingReader) return false;
     try {
       return await stakingReader.paused();
     } catch {
       return false;
     }
-  }
+  }, [stakingReader]);
 
-  // Get TWAP Price
-  async function fetchTWAPPrice() {
+  const fetchTWAPPrice = useCallback(async () => {
     if (!stakingReader) return "0";
     try {
       const price = await stakingReader.getTWAPPrice();
@@ -235,30 +243,30 @@ export function useContract(signer, provider) {
     } catch {
       return "0";
     }
-  }
+  }, [stakingReader]);
 
-  // Get CrypPay Token Address
-  async function fetchCrypPayToken() {
+  const fetchCrypPayToken = useCallback(async () => {
     if (!stakingReader) return "";
     try {
       return await stakingReader.crypPayToken();
     } catch {
       return "";
     }
-  }
+  }, [stakingReader]);
 
-  // Transfer Ownership
-  async function transferOwnership(newOwner) {
-    if (!stakingContract) throw new Error("Wallet not connected");
-    const tx = await stakingContract.transferOwnership(newOwner, {
-      gasLimit: 100000n
-    });
-    await tx.wait();
-    return tx;
-  }
+  const transferOwnership = useCallback(
+    async (newOwner) => {
+      if (!stakingContract) throw new Error("Wallet not connected");
+      const tx = await stakingContract.transferOwnership(newOwner, {
+        gasLimit: 100000n,
+      });
+      await tx.wait();
+      return tx;
+    },
+    [stakingContract]
+  );
 
-  // Fetch Contract Events via BSCScan API
-  async function fetchContractEvents() {
+  const fetchContractEvents = useCallback(async () => {
     try {
       const apiUrl = `https://api-testnet.bscscan.com/api?module=logs&action=getLogs&address=${CONTRACT_ADDRESS}&fromBlock=0&toBlock=latest&apikey=YourApiKeyToken`;
 
@@ -271,7 +279,7 @@ export function useContract(signer, provider) {
         "event UserStaked(address indexed user, uint256 indexed planId, string planName, uint256 amount, uint256 unlockTime)",
         "event UserClaimed(address indexed user, uint256 indexed stakeIndex, uint256 amount, uint256 totalClaimed, uint256 remaining)",
         "event UserWithdrawn(address indexed user, uint256 indexed planId, uint256 principalReleased, uint256 totalClaimed, uint256 unlockTime)",
-        "event EmergencyWithdrawn(address indexed user, uint256 indexed planId, uint256 amount, uint256 penalty)"
+        "event EmergencyWithdrawn(address indexed user, uint256 indexed planId, uint256 amount, uint256 penalty)",
       ];
 
       const iface = new ethers.Interface(eventABI);
@@ -326,59 +334,69 @@ export function useContract(signer, provider) {
       console.error("Event fetch error:", err);
       return [];
     }
-  }
+  }, []);
 
   // ─── WRITE FUNCTIONS ───────────────────────────────
 
-  // ✅ Approve Tokens — alag function
-  async function approveTokens(amount) {
-    if (!tokenContract) throw new Error("Wallet not connected");
-    const amountWei = ethers.parseEther(amount.toString());
-    const tx = await tokenContract.approve(CONTRACT_ADDRESS, amountWei, {
-      gasLimit: 100000n
-    });
-    return tx;
-  }
+  const approveTokens = useCallback(
+    async (amount) => {
+      if (!tokenContract) throw new Error("Wallet not connected");
+      const amountWei = ethers.parseEther(amount.toString());
+      const tx = await tokenContract.approve(CONTRACT_ADDRESS, amountWei, {
+        gasLimit: 100000n,
+      });
+      return tx;
+    },
+    [tokenContract]
+  );
 
-  // ✅ Stake Tokens — sirf stake, approve nahi
-  async function stakeTokens(planId, amount) {
-    if (!stakingContract) throw new Error("Wallet not connected");
-    const amountWei = ethers.parseEther(amount.toString());
-    const tx = await stakingContract.stake(planId, amountWei, {
-      gasLimit: 500000n
-    });
-    return tx;
-  }
+  const stakeTokens = useCallback(
+    async (planId, amount) => {
+      if (!stakingContract) throw new Error("Wallet not connected");
+      const amountWei = ethers.parseEther(amount.toString());
+      const tx = await stakingContract.stake(planId, amountWei, {
+        gasLimit: 500000n,
+      });
+      return tx;
+    },
+    [stakingContract]
+  );
 
-  // Claim
-  async function claimTokens(index) {
-    if (!stakingContract) throw new Error("Wallet not connected");
-    const tx = await stakingContract.claim(index, {
-      gasLimit: 300000n
-    });
-    await tx.wait();
-    return tx;
-  }
+  const claimTokens = useCallback(
+    async (index) => {
+      if (!stakingContract) throw new Error("Wallet not connected");
+      const tx = await stakingContract.claim(index, {
+        gasLimit: 300000n,
+      });
+      await tx.wait();
+      return tx;
+    },
+    [stakingContract]
+  );
 
-  // Withdraw
-  async function withdrawTokens(index) {
-    if (!stakingContract) throw new Error("Wallet not connected");
-    const tx = await stakingContract.withdraw(index, {
-      gasLimit: 300000n
-    });
-    await tx.wait();
-    return tx;
-  }
+  const withdrawTokens = useCallback(
+    async (index) => {
+      if (!stakingContract) throw new Error("Wallet not connected");
+      const tx = await stakingContract.withdraw(index, {
+        gasLimit: 300000n,
+      });
+      await tx.wait();
+      return tx;
+    },
+    [stakingContract]
+  );
 
-  // Emergency Withdraw
-  async function emergencyWithdrawTokens(index) {
-    if (!stakingContract) throw new Error("Wallet not connected");
-    const tx = await stakingContract.emergencyWithdraw(index, {
-      gasLimit: 400000n
-    });
-    await tx.wait();
-    return tx;
-  }
+  const emergencyWithdrawTokens = useCallback(
+    async (index) => {
+      if (!stakingContract) throw new Error("Wallet not connected");
+      const tx = await stakingContract.emergencyWithdraw(index, {
+        gasLimit: 400000n,
+      });
+      await tx.wait();
+      return tx;
+    },
+    [stakingContract]
+  );
 
   return {
     // Read functions
@@ -406,6 +424,7 @@ export function useContract(signer, provider) {
     fetchCrypPayToken,
     transferOwnership,
     fetchContractEvents,
+
     // Write functions
     approveTokens,
     stakeTokens,

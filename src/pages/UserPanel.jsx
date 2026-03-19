@@ -5,21 +5,28 @@ import Dashboard from "../components/UserDashboard";
 import { useContract } from "../hooks/useContract";
 
 export default function UserPanel({ account, signer, provider, connectWallet }) {
-
   const { fetchUserStakeCount } = useContract(signer, provider);
   const [activeTab, setActiveTab] = useState("home");
   const [hasStakes, setHasStakes] = useState(false);
 
   // Check if user has stakes
   useEffect(() => {
-    if (!account || !provider) {
-      setHasStakes(false);
-      setActiveTab("home");
-      return;
-    }
-    const checkStakes = async () => {
+    let ignore = false;
+
+    async function checkStakes() {
+      if (!account || !provider) {
+        if (!ignore) {
+          setHasStakes(false);
+          setActiveTab("home");
+        }
+        return;
+      }
+
       try {
         const count = await fetchUserStakeCount(account);
+
+        if (ignore) return;
+
         if (Number(count) > 0) {
           setHasStakes(true);
           setActiveTab("stake");
@@ -28,11 +35,19 @@ export default function UserPanel({ account, signer, provider, connectWallet }) 
           setActiveTab("home");
         }
       } catch {
-        setHasStakes(false);
+        if (!ignore) {
+          setHasStakes(false);
+          setActiveTab("home");
+        }
       }
-    };
+    }
+
     checkStakes();
-  }, [account, provider]);
+
+    return () => {
+      ignore = true;
+    };
+  }, [account, provider, fetchUserStakeCount]);
 
   // Tab logic:
   // No wallet → Home + Stake
@@ -40,22 +55,21 @@ export default function UserPanel({ account, signer, provider, connectWallet }) 
   // Wallet + has stakes → Stake + Dashboard
   const tabs = !account
     ? [
-        { id: "home",  label: "🏠 Home" },
+        { id: "home", label: "🏠 Home" },
         { id: "stake", label: "💰 Stake" },
       ]
     : hasStakes
     ? [
-        { id: "stake",     label: "💰 Stake" },
+        { id: "stake", label: "💰 Stake" },
         { id: "dashboard", label: "📊 Dashboard" },
       ]
     : [
-        { id: "home",  label: "🏠 Home" },
+        { id: "home", label: "🏠 Home" },
         { id: "stake", label: "💰 Stake" },
       ];
 
   return (
     <div className="max-w-6xl mx-auto">
-
       {/* Tabs */}
       <div className="flex gap-2 mb-8 border-b border-gray-700 pb-2">
         {tabs.map((tab) => (
@@ -92,13 +106,8 @@ export default function UserPanel({ account, signer, provider, connectWallet }) 
       )}
 
       {activeTab === "dashboard" && account && hasStakes && (
-        <Dashboard
-          account={account}
-          signer={signer}
-          provider={provider}
-        />
+        <Dashboard account={account} signer={signer} provider={provider} />
       )}
-
     </div>
   );
 }

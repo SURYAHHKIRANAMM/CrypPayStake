@@ -4,20 +4,6 @@ import { http } from "wagmi";
 
 /*
 -----------------------------------
-Wagmi + RainbowKit Config
------------------------------------
-*/
-export const wagmiConfig = getDefaultConfig({
-  appName: "CrypPayStake",
-  projectId: "68a09f0e480bd91db9a891404d462ce1",
-  chains: [bscTestnet],
-  transports: {
-    [bscTestnet.id]: http("https://data-seed-prebsc-1-s1.binance.org:8545"),
-  },
-});
-
-/*
------------------------------------
 Network
 -----------------------------------
 */
@@ -26,13 +12,30 @@ export const RPC_URL = "https://data-seed-prebsc-1-s1.binance.org:8545";
 
 /*
 -----------------------------------
+Wagmi + RainbowKit Config
+-----------------------------------
+*/
+export const wagmiConfig = getDefaultConfig({
+  appName: "CrypPayStake",
+  projectId:
+    import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ||
+    "68a09f0e480bd91db9a891404d462ce1",
+  chains: [bscTestnet],
+  transports: {
+    [bscTestnet.id]: http(RPC_URL),
+  },
+  ssr: false,
+});
+
+/*
+-----------------------------------
 Admin Wallets
 -----------------------------------
 */
-export const ADMIN_WALLET = import.meta.env.VITE_ADMIN_WALLET;
-export const VIEWER_WALLET = import.meta.env.VITE_VIEWER_WALLET;
+export const ADMIN_WALLET = import.meta.env.VITE_ADMIN_WALLET || "";
+export const VIEWER_WALLET = import.meta.env.VITE_VIEWER_WALLET || "";
 
-/* 
+/*
 -----------------------------------
 Contract Addresses
 -----------------------------------

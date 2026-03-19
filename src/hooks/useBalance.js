@@ -1,36 +1,42 @@
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { TOKEN_ADDRESS, TOKEN_ABI } from "../contract/config";
 
 export function useBalance(account, provider) {
-
   const [balance, setBalance] = useState("0");
 
-  const loadBalance = useCallback(async () => {
+  useEffect(() => {
+    let ignore = false;
 
-    if (!account || !provider) return;
+    async function run() {
+      if (!account || !provider) {
+        if (!ignore) setBalance("0");
+        return;
+      }
 
-    try {
+      try {
+        const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, provider);
 
-      const token = new ethers.Contract(
-        TOKEN_ADDRESS,
-        TOKEN_ABI,
-        provider
-      );
+        const [rawBalance, decimals] = await Promise.all([
+          token.balanceOf(account),
+          token.decimals(),
+        ]);
 
-      const bal = await token.balanceOf(account);
-
-      setBalance(ethers.formatUnits(bal, 18));
-
-    } catch (err) {
-      console.error("Balance fetch failed:", err);
+        if (!ignore) {
+          setBalance(ethers.formatUnits(rawBalance, decimals));
+        }
+      } catch (err) {
+        console.error("Balance load error:", err);
+        if (!ignore) setBalance("0");
+      }
     }
 
-  }, [account, provider]);
+    run();
 
-  useEffect(() => {
-    loadBalance();
-  }, [loadBalance]);
+    return () => {
+      ignore = true;
+    };
+  }, [account, provider]);
 
   return balance;
 }

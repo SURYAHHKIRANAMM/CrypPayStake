@@ -11,22 +11,23 @@ import { wagmiConfig } from "./contract/config";
 import "@rainbow-me/rainbowkit/styles.css";
 import "./index.css";
 
+window.global = window;
+window.process = window.process || { env: {} };
+
 const queryClient = new QueryClient();
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider
-          theme={darkTheme({
-            accentColor: "#facc15",
-            accentColorForeground: "black",
-            borderRadius: "medium",
-          })}
-        >
-          <App />
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
-  </React.StrictMode>
+  <WagmiProvider config={wagmiConfig}>
+    <QueryClientProvider client={queryClient}>
+      <RainbowKitProvider
+        theme={darkTheme({
+          accentColor: "#facc15",
+          accentColorForeground: "black",
+          borderRadius: "medium",
+        })}
+      >
+        <App />
+      </RainbowKitProvider>
+    </QueryClientProvider>
+  </WagmiProvider>
 );

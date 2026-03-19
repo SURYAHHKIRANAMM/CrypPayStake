@@ -1,88 +1,50 @@
 import { Link } from "react-router-dom";
+import { useMemo } from "react";
 import WalletButton from "./WalletButton";
-import { useWallet } from "../hooks/useWallet";
 import { ADMIN_WALLET, VIEWER_WALLET } from "../contract/config";
-import { useState, useEffect } from "react";
 
-export default function Navbar({ provider }) {
+const SHOW_ROLE_LINKS = import.meta.env.VITE_SHOW_ROLE_LINKS === "true";
 
-  const { account } = useWallet();
+export default function Navbar({ provider, account }) {
+  const isAdmin = useMemo(() => {
+    if (!account) return false;
 
-  const [isAdmin, setIsAdmin] = useState(false);
+    const addr = account.toLowerCase();
+    const admin = ADMIN_WALLET?.toLowerCase?.() || "";
+    const viewer = VIEWER_WALLET?.toLowerCase?.() || "";
 
-  useEffect(() => {
-    if (account) {
-      const addr = account.toLowerCase();
-      if (addr === ADMIN_WALLET.toLowerCase() || addr === VIEWER_WALLET.toLowerCase()) {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
-      }
-    }
+    return (admin && addr === admin) || (viewer && addr === viewer);
   }, [account]);
-  
+
   return (
-    <nav className="
+    <nav
+      className="
       flex justify-between items-center
       px-6 py-4
       bg-black/40 backdrop-blur-md
       border-b border-gray-700 shadow-lg
-    ">
-
-      {/* Logo — sirf text */}
+    "
+    >
       <Link to="/">
         <span className="text-xl font-bold text-yellow-400 tracking-wide">
           ⚡ CrypPayStake
         </span>
       </Link>
 
-      {/* Navigation (hidden but structure same) */}
       <div className="flex gap-8 text-gray-300 font-medium">
-
-        {/* Role Based Navigation */}
-        {false && (
-          isAdmin ? (
-            <a
-              href="/admin"
-              className="transition hover:text-yellow-400"
-            >
+        {SHOW_ROLE_LINKS &&
+          (isAdmin ? (
+            <Link to="/admin" className="transition hover:text-yellow-400">
               Admin Panel
-            </a>
+            </Link>
           ) : (
-            <a
-              href="/dashboard"
-              className="transition hover:text-yellow-400"
-            >
+            <Link to="/" className="transition hover:text-yellow-400">
               User Panel
-            </a>
-          )
-        )}
-
-        {/* Existing Links (unchanged but hidden) */}
-
-        {false && !isAdmin && (
-          <Link
-            to="/"
-            className="transition hover:text-yellow-400"
-          >
-            User Panel
-          </Link>
-        )}
-
-        {false && isAdmin && (
-          <Link
-            to="/admin"
-            className="transition hover:text-yellow-400"
-          >
-            Admin Panel
-          </Link>
-        )}
-
+            </Link>
+          ))}
       </div>
 
-      {/* Wallet — RainbowKit + CRP Balance */}
       <WalletButton provider={provider} />
-
     </nav>
   );
 }

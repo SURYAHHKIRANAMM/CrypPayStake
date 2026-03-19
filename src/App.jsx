@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 
 import Navbar from "./components/Navbar";
 import UserPanel from "./pages/UserPanel";
@@ -10,31 +10,28 @@ import Loading from "./components/Loading";
 import { useWallet } from "./hooks/useWallet";
 import { ADMIN_WALLET, VIEWER_WALLET } from "./contract/config";
 
+const SHOW_LEGACY_PANELS = import.meta.env.VITE_SHOW_LEGACY_PANELS === "true";
+
 export default function App() {
-
   const { account, provider, signer, connectWallet } = useWallet();
-
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setLoading(false);
     }, 1500);
+
+    return () => clearTimeout(timer);
   }, []);
 
-  // Admin wallet detection
-  useEffect(() => {
-    if (account) {
-      const addr = account.toLowerCase();
-      if (addr === ADMIN_WALLET.toLowerCase() || addr === VIEWER_WALLET.toLowerCase()) {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
-      }
-    } else {
-      setIsAdmin(false);
-    }
+  const isAdmin = useMemo(() => {
+    if (!account) return false;
+
+    const addr = account.toLowerCase();
+    const admin = ADMIN_WALLET?.toLowerCase?.() || "";
+    const viewer = VIEWER_WALLET?.toLowerCase?.() || "";
+
+    return (admin && addr === admin) || (viewer && addr === viewer);
   }, [account]);
 
   if (loading) {
@@ -44,12 +41,10 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-gray-900 text-white">
-
-        <Navbar provider={provider} />
+        <Navbar provider={provider} account={account} />
 
         <div className="p-6">
           <Routes>
-
             <Route
               path="/"
               element={
@@ -96,12 +91,9 @@ export default function App() {
                 )
               }
             />
-
           </Routes>
 
-          {/* Wallet Role Based Dashboard (Disabled to avoid duplicate rendering) */}
-
-          {false && !account && (
+          {SHOW_LEGACY_PANELS && !account && (
             <UserPanel
               account={account}
               signer={signer}
@@ -110,7 +102,7 @@ export default function App() {
             />
           )}
 
-          {false && account && !isAdmin && (
+          {SHOW_LEGACY_PANELS && account && !isAdmin && (
             <UserPanel
               account={account}
               signer={signer}
@@ -119,18 +111,16 @@ export default function App() {
             />
           )}
 
-          {false && account && isAdmin && (
+          {SHOW_LEGACY_PANELS && account && isAdmin && (
             <AdminPanel
               account={account}
               signer={signer}
               provider={provider}
             />
           )}
-
         </div>
 
         <Toaster position="top-right" />
-
       </div>
     </BrowserRouter>
   );
