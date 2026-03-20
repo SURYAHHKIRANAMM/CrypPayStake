@@ -15,6 +15,8 @@ export default function AdminDashboard({ account, signer, provider }) {
     fetchTotalStakedInPlan,
     fetchPlanPaused,
     fetchPlanEmergency,
+    fetchPlanClaimPaused,
+    fetchPlanEmergencyWithdrawPaused,
     fetchContractEvents,
     fetchUserStakes,
     fetchClaimable,
@@ -32,11 +34,18 @@ export default function AdminDashboard({ account, signer, provider }) {
   // ─── State ───────────────────────────────────────────
   const [plans, setPlans] = useState([]);
   const [stats, setStats] = useState({
-    totalStaked: "0",
-    totalStakers: "0",
-    maxTVL: "0",
-  });
-  const [loading, setLoading] = useState(false);
+  totalStaked: "0",
+  totalStakers: "0",
+  maxTVL: "0",
+  tokenPrice: "0",
+  tvlUsd: "0",
+  totalDistributed: "0",
+  totalWithdrawn: "0",
+});
+
+  const [loadingAction, setLoadingAction] = useState("");
+  const [planClaimPausedStatus, setPlanClaimPausedStatus] = useState({});
+  const [planEmergencyWithdrawPausedStatus, setPlanEmergencyWithdrawPausedStatus] = useState({});
   const [activeTab, setActiveTab] = useState("plans");
 
   // Analytics State
@@ -175,16 +184,24 @@ export default function AdminDashboard({ account, signer, provider }) {
       const stakedAmounts = {};
       const pausedStatuses = {};
       const emergencyStatuses = {};
+      const claimPausedStatuses = {};
+      const emergencyWithdrawPausedStatuses = {};
+
 
       for (let i = 0; i < p.length; i++) {
         stakedAmounts[i] = await fetchTotalStakedInPlan(i);
         pausedStatuses[i] = await fetchPlanPaused(i);
         emergencyStatuses[i] = await fetchPlanEmergency(i);
+        claimPausedStatuses[i] = await fetchPlanClaimPaused(i);
+        emergencyWithdrawPausedStatuses[i] = await fetchPlanEmergencyWithdrawPaused(i);
       }
 
       setPlanStakedAmounts(stakedAmounts);
       setPlanPausedStatus(pausedStatuses);
       setPlanEmergencyStatus(emergencyStatuses);
+      setPlanClaimPausedStatus(claimPausedStatuses);
+      setPlanEmergencyWithdrawPausedStatus(emergencyWithdrawPausedStatuses);
+
     } catch (err) {
       console.error("Load failed:", err);
     }
@@ -199,6 +216,8 @@ export default function AdminDashboard({ account, signer, provider }) {
     fetchTotalStakedInPlan,
     fetchPlanPaused,
     fetchPlanEmergency,
+    fetchPlanClaimPaused,
+    fetchPlanEmergencyWithdrawPaused,
     fetchOwner,
     fetchPairAddress,
     fetchPriceFeedAddress,
@@ -224,18 +243,18 @@ export default function AdminDashboard({ account, signer, provider }) {
   }, [provider, loadData]);
 
   // ─── Helpers ─────────────────────────────────────────
-  async function runTx(fn, successMsg) {
-    setLoading(true);
-    try {
-      await fn();
-      toast.success(successMsg);
-      await loadData();
-    } catch (err) {
-      toast.error(err?.reason || err?.shortMessage || err?.message || "Transaction failed");
-    } finally {
-      setLoading(false);
-    }
+  async function runTx(fn, successMsg, actionKey = "") {
+  setLoadingAction(actionKey);
+  try {
+    await fn();
+    toast.success(successMsg);
+    await loadData();
+  } catch (err) {
+    toast.error(err?.reason || err?.shortMessage || err?.message || "Transaction failed");
+  } finally {
+    setLoadingAction("");
   }
+}
 
   function formatAmount(val) {
     try {
@@ -257,14 +276,27 @@ export default function AdminDashboard({ account, signer, provider }) {
   // ─── Admin Functions ──────────────────────────────────
 
   async function handleCreatePlan() {
-    const { name, lockPeriod, releasePercent, claimInterval, minTokenAmount } = planForm;
+  const {
+    name,
+    lockPeriod,
+    releasePercent,
+    claimInterval,
+    minTokenAmount,
+  } = planForm;
 
-    if (!name || !lockPeriod || !releasePercent || !claimInterval || !minTokenAmount) {
-      toast.error("Please fill all fields!");
-      return;
-    }
+  if (
+    !name ||
+    !lockPeriod ||
+    !releasePercent ||
+    !claimInterval ||
+    !minTokenAmount
+  ) {
+    toast.error("Please fill all fields!");
+    return;
+  }
 
-    await runTx(async () => {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.createPlan(
         name,
@@ -274,131 +306,206 @@ export default function AdminDashboard({ account, signer, provider }) {
         ethers.parseEther(minTokenAmount)
       );
       await tx.wait();
-    }, "Plan created! ✅");
+    },
+    "Plan created! ✅",
+    "create-plan"
+  );
 
-    setPlanForm({
-      name: "",
-      lockPeriod: "",
-      releasePercent: "",
-      claimInterval: "",
-      minTokenAmount: "",
-    });
-  }
+  setPlanForm({
+    name: "",
+    lockPeriod: "",
+    releasePercent: "",
+    claimInterval: "",
+    minTokenAmount: "",
+  });
+}
 
-  async function handleDisablePlan(planId) {
-    await runTx(async () => {
+async function handleDisablePlan(planId) {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.disablePlan(planId);
       await tx.wait();
-    }, `Plan ${planId} disabled! ✅`);
-  }
+    },
+    `Plan ${planId} disabled! ✅`,
+    `plan-${planId}-disable`
+  );
+}
 
-  async function handleTogglePause(planId) {
-    await runTx(async () => {
+async function handleEnablePlan(planId) {
+  await runTx(
+    async () => {
+      const c = getContract();
+      const tx = await c.enablePlan(planId);
+      await tx.wait();
+    },
+    `Plan ${planId} enabled! ✅`,
+    `plan-${planId}-enable`
+  );
+}
+
+async function handleTogglePause(planId) {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.togglePlanPause(planId);
       await tx.wait();
-    }, `Plan ${planId} pause toggled! ✅`);
-  }
+    },
+    `Plan ${planId} pause toggled! ✅`,
+    `plan-${planId}-pause`
+  );
+}
 
-  async function handleTogglePlanEmergency(planId) {
-    await runTx(async () => {
+async function handleTogglePlanEmergency(planId) {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.togglePlanEmergency(planId);
       await tx.wait();
-    }, `Plan ${planId} emergency toggled! ✅`);
+    },
+    `Plan ${planId} emergency toggled! ✅`,
+    `plan-${planId}-emergency`
+  );
+}
+
+async function handleTogglePlanClaimPause(planId) {
+  await runTx(
+    async () => {
+      const c = getContract();
+      const tx = await c.togglePlanClaimPause(planId);
+      await tx.wait();
+    },
+    `Plan ${planId} claim pause toggled! ✅`,
+    `plan-${planId}-claim-pause`
+  );
+}
+
+async function handleTogglePlanEmergencyWithdrawPause(planId) {
+  await runTx(
+    async () => {
+      const c = getContract();
+      const tx = await c.togglePlanEmergencyWithdrawPause(planId);
+      await tx.wait();
+    },
+    `Plan ${planId} emergency withdraw pause toggled! ✅`,
+    `plan-${planId}-ew-pause`
+  );
+}
+
+async function handleSetMaxTVL() {
+  if (!maxTVL) {
+    toast.error("Please enter MaxTVL!");
+    return;
   }
 
-  async function handleSetMaxTVL() {
-    if (!maxTVL) {
-      toast.error("Please enter MaxTVL!");
-      return;
-    }
-
-    await runTx(async () => {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.setMaxTVL(ethers.parseEther(maxTVL));
       await tx.wait();
-    }, "MaxTVL updated! ✅");
+    },
+    "MaxTVL updated! ✅",
+    "set-max-tvl"
+  );
 
-    setMaxTVL("");
+  setMaxTVL("");
+}
+
+async function handleSetMinAmount() {
+  if (!minAmountPlanId || !minAmount) {
+    toast.error("Please enter Plan ID and amount!");
+    return;
   }
 
-  async function handleSetMinAmount() {
-    if (!minAmountPlanId || !minAmount) {
-      toast.error("Please enter Plan ID and amount!");
-      return;
-    }
-
-    await runTx(async () => {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.setMinTokenAmount(
         Number(minAmountPlanId),
         ethers.parseEther(minAmount)
       );
       await tx.wait();
-    }, "Min amount updated! ✅");
+    },
+    "Min amount updated! ✅",
+    `plan-${minAmountPlanId}-min-amount`
+  );
 
-    setMinAmount("");
-    setMinAmountPlanId("");
+  setMinAmount("");
+  setMinAmountPlanId("");
+}
+
+async function handleSetPairAddress() {
+  if (!pairAddress) {
+    toast.error("Please enter pair address!");
+    return;
   }
 
-  async function handleSetPairAddress() {
-    if (!pairAddress) {
-      toast.error("Please enter pair address!");
-      return;
-    }
-
-    await runTx(async () => {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.setPairAddress(pairAddress);
       await tx.wait();
-    }, "Pair address updated! ✅");
+    },
+    "Pair address updated! ✅",
+    "set-pair-address"
+  );
 
-    setPairAddress("");
+  setPairAddress("");
+}
+
+async function handleSetPriceFeed() {
+  if (!priceFeed) {
+    toast.error("Please enter price feed address!");
+    return;
   }
 
-  async function handleSetPriceFeed() {
-    if (!priceFeed) {
-      toast.error("Please enter price feed address!");
-      return;
-    }
-
-    await runTx(async () => {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.setPriceFeed(priceFeed);
       await tx.wait();
-    }, "Price feed updated! ✅");
+    },
+    "Price feed updated! ✅",
+    "set-price-feed"
+  );
 
-    setPriceFeed("");
-  }
+  setPriceFeed("");
+}
 
-  async function handleSetEmergencyMode(status) {
-    await runTx(async () => {
+async function handleSetEmergencyMode(status) {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.setEmergencyMode(status);
       await tx.wait();
-    }, `Emergency mode ${status ? "ON" : "OFF"}! ✅`);
+    },
+    `Emergency mode ${status ? "ON" : "OFF"}! ✅`,
+    status ? "emergency-mode-on" : "emergency-mode-off"
+  );
+}
+
+async function handleWithdrawStuck() {
+  if (!stuckToken || !stuckAmount) {
+    toast.error("Please enter token address and amount!");
+    return;
   }
 
-  async function handleWithdrawStuck() {
-    if (!stuckToken || !stuckAmount) {
-      toast.error("Please enter token address and amount!");
-      return;
-    }
-
-    await runTx(async () => {
+  await runTx(
+    async () => {
       const c = getContract();
       const tx = await c.withdrawStuckTokens(
         stuckToken,
         ethers.parseEther(stuckAmount)
       );
       await tx.wait();
-    }, "Tokens withdrawn! ✅");
+    },
+    "Tokens withdrawn! ✅",
+    "withdraw-stuck"
+  );
 
-    setStuckToken("");
-    setStuckAmount("");
-  }
+  setStuckToken("");
+  setStuckAmount("");
+}
 
   // ─── UI Components ────────────────────────────────────
 
@@ -417,25 +524,31 @@ export default function AdminDashboard({ account, signer, provider }) {
     );
   }
 
-  function AdminButton({ onClick, label, color = "yellow", disabled = false }) {
-    const colors = {
-      yellow: "bg-yellow-500 hover:bg-yellow-400 text-black",
-      red: "bg-red-600 hover:bg-red-500 text-white",
-      green: "bg-green-600 hover:bg-green-500 text-white",
-      blue: "bg-blue-600 hover:bg-blue-500 text-white",
-      orange: "bg-orange-600 hover:bg-orange-500 text-white",
-    };
+  function AdminButton({
+  onClick,
+  label,
+  color = "yellow",
+  disabled = false,
+  isLoading = false,
+}) {
+  const colors = {
+    yellow: "bg-yellow-500 hover:bg-yellow-400 text-black",
+    red: "bg-red-600 hover:bg-red-500 text-white",
+    green: "bg-green-600 hover:bg-green-500 text-white",
+    blue: "bg-blue-600 hover:bg-blue-500 text-white",
+    orange: "bg-orange-600 hover:bg-orange-500 text-white",
+  };
 
-    return (
-      <button
-        onClick={onClick}
-        disabled={loading || disabled}
-        className={`${colors[color]} px-4 py-2 rounded font-semibold text-sm transition disabled:opacity-50`}
-      >
-        {loading ? "Processing..." : label}
-      </button>
-    );
-  }
+  return (
+    <button
+      onClick={onClick}
+      disabled={isLoading || disabled}
+      className={`${colors[color]} px-4 py-2 rounded font-semibold text-sm transition disabled:opacity-50`}
+    >
+      {isLoading ? "Processing..." : label}
+    </button>
+  );
+}
 
   // ─── RENDER ───────────────────────────────────────────
   return (
@@ -615,118 +728,170 @@ export default function AdminDashboard({ account, signer, provider }) {
       </div>
 
       {/* ── TAB: PLANS ── */}
-      {activeTab === "plans" && (
-        <div className="space-y-4">
-          {plans.length === 0 ? (
-            <p className="text-gray-400 text-center py-10">No plans found</p>
-          ) : (
-            plans.map((plan, index) => (
-              <div key={index} className="bg-gray-800 border border-gray-700 rounded-xl p-5">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <span className="text-yellow-400 font-bold text-lg">
-                      Plan #{index} — {plan.name}
-                    </span>
-                    <div className="flex gap-2 mt-1">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
-                          plan.active
-                            ? "bg-green-900 text-green-400"
-                            : "bg-red-900 text-red-400"
-                        }`}
-                      >
-                        {plan.active ? "Active" : "Disabled"}
-                      </span>
-                      {planPausedStatus[index] && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-orange-900 text-orange-400">
-                          Paused ⏸️
-                        </span>
-                      )}
-                      {planEmergencyStatus[index] && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-900 text-red-400">
-                          Emergency 🚨
-                        </span>
-                      )}
-                    </div>
-                  </div>
+{activeTab === "plans" && (
+  <div className="space-y-4">
+    {plans.length === 0 ? (
+      <p className="text-gray-400 text-center py-10">No plans found</p>
+    ) : (
+      plans.map((plan, index) => (
+        <div
+          key={index}
+          className="bg-gray-800 border border-gray-700 rounded-xl p-5"
+        >
+          <div className="flex justify-between items-start mb-3 gap-4">
+            <div>
+              <span className="text-yellow-400 font-bold text-lg">
+                Plan #{index} — {plan.name}
+              </span>
 
-                  {isFullAdmin && (
-                    <div className="flex gap-2">
-                      <AdminButton
-                        onClick={() => handleTogglePause(index)}
-                        label={planPausedStatus[index] ? "Resume" : "Pause"}
-                        color="orange"
-                      />
-                      <AdminButton
-                        onClick={() => handleTogglePlanEmergency(index)}
-                        label="Emergency"
-                        color="red"
-                      />
-                      {plan.active && (
-                        <AdminButton
-                          onClick={() => handleDisablePlan(index)}
-                          label="Disable"
-                          color="red"
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
+              <div className="flex gap-2 mt-1 flex-wrap">
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full ${
+                    plan.active
+                      ? "bg-green-900 text-green-400"
+                      : "bg-red-900 text-red-400"
+                  }`}
+                >
+                  {plan.active ? "Active" : "Disabled"}
+                </span>
 
-                <div className="grid grid-cols-5 gap-3 text-sm">
-                  <div>
-                    <p className="text-gray-400 text-xs">Lock Period</p>
-                    <p className="text-white">
-                      {Number(plan.lockPeriod) >= 2592000
-                        ? `${(Number(plan.lockPeriod) / 2592000).toFixed(0)} Months`
-                        : Number(plan.lockPeriod) >= 86400
-                        ? `${(Number(plan.lockPeriod) / 86400).toFixed(0)} Days`
-                        : Number(plan.lockPeriod) >= 3600
-                        ? `${(Number(plan.lockPeriod) / 3600).toFixed(0)} Hours`
-                        : Number(plan.lockPeriod) >= 60
-                        ? `${(Number(plan.lockPeriod) / 60).toFixed(0)} Min`
-                        : `${Number(plan.lockPeriod)} Sec`}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400 text-xs">Release %</p>
-                    <p className="text-white">
-                      {plan.releasePercent.toString()}% / interval
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400 text-xs">Claim Interval</p>
-                    <p className="text-white">
-                      {Number(plan.claimInterval) >= 86400
-                        ? `${(Number(plan.claimInterval) / 86400).toFixed(0)} Days`
-                        : Number(plan.claimInterval) >= 3600
-                        ? `${(Number(plan.claimInterval) / 3600).toFixed(0)} Hours`
-                        : Number(plan.claimInterval) >= 60
-                        ? `${(Number(plan.claimInterval) / 60).toFixed(0)} Min`
-                        : `${Number(plan.claimInterval)} Sec`}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400 text-xs">Min Stake</p>
-                    <p className="text-white">
-                      {formatAmount(plan.minTokenAmount)} CRP
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400 text-xs">Total Staked</p>
-                    <p className="text-yellow-400 font-bold">
-                      {Number(planStakedAmounts[index] || 0).toLocaleString()} CRP
-                    </p>
-                    <p className="text-gray-500 text-xs">
-                      ≈ ₹{crpToINR(Number(planStakedAmounts[index] || 0))}
-                    </p>
-                  </div>
-                </div>
+                {planPausedStatus[index] && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-orange-900 text-orange-400">
+                    Paused ⏸️
+                  </span>
+                )}
+
+                {planClaimPausedStatus[index] && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900 text-blue-400">
+                    Claim Paused 🧾
+                  </span>
+                )}
+
+                {planEmergencyStatus[index] && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-red-900 text-red-400">
+                    Emergency 🚨
+                  </span>
+                )}
+
+                {planEmergencyWithdrawPausedStatus[index] && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-sky-900 text-sky-400">
+                    E-Withdraw Paused ⛔
+                  </span>
+                )}
               </div>
-            ))
-          )}
+            </div>
+
+            {isFullAdmin && (
+              <div className="flex gap-2 flex-wrap justify-end">
+                <AdminButton
+                  onClick={() => handleTogglePause(index)}
+                  label={planPausedStatus[index] ? "Resume" : "Pause"}
+                  color="orange"
+                  isLoading={loadingAction === `plan-${index}-pause`}
+                />
+
+                <AdminButton
+                  onClick={() => handleTogglePlanClaimPause(index)}
+                  label={planClaimPausedStatus[index] ? "Claim On" : "Claim Off"}
+                  color="blue"
+                  isLoading={loadingAction === `plan-${index}-claim-pause`}
+                />
+
+                <AdminButton
+                  onClick={() => handleTogglePlanEmergency(index)}
+                  label="Emergency"
+                  color="red"
+                  isLoading={loadingAction === `plan-${index}-emergency`}
+                />
+
+                <AdminButton
+                  onClick={() => handleTogglePlanEmergencyWithdrawPause(index)}
+                  label={
+                    planEmergencyWithdrawPausedStatus[index]
+                      ? "E-Withdraw On"
+                      : "E-Withdraw Off"
+                  }
+                  color="blue"
+                  isLoading={loadingAction === `plan-${index}-ew-pause`}
+                />
+
+                {plan.active ? (
+                  <AdminButton
+                    onClick={() => handleDisablePlan(index)}
+                    label="Disable"
+                    color="red"
+                    isLoading={loadingAction === `plan-${index}-disable`}
+                  />
+                ) : (
+                  <AdminButton
+                    onClick={() => handleEnablePlan(index)}
+                    label="Enable"
+                    color="green"
+                    isLoading={loadingAction === `plan-${index}-enable`}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-5 gap-3 text-sm">
+            <div>
+              <p className="text-gray-400 text-xs">Lock Period</p>
+              <p className="text-white">
+                {Number(plan.lockPeriod) >= 2592000
+                  ? `${(Number(plan.lockPeriod) / 2592000).toFixed(0)} Months`
+                  : Number(plan.lockPeriod) >= 86400
+                  ? `${(Number(plan.lockPeriod) / 86400).toFixed(0)} Days`
+                  : Number(plan.lockPeriod) >= 3600
+                  ? `${(Number(plan.lockPeriod) / 3600).toFixed(0)} Hours`
+                  : Number(plan.lockPeriod) >= 60
+                  ? `${(Number(plan.lockPeriod) / 60).toFixed(0)} Min`
+                  : `${Number(plan.lockPeriod)} Sec`}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-gray-400 text-xs">Release %</p>
+              <p className="text-white">
+                {plan.releasePercent.toString()}% / interval
+              </p>
+            </div>
+
+            <div>
+              <p className="text-gray-400 text-xs">Claim Interval</p>
+              <p className="text-white">
+                {Number(plan.claimInterval) >= 86400
+                  ? `${(Number(plan.claimInterval) / 86400).toFixed(0)} Days`
+                  : Number(plan.claimInterval) >= 3600
+                  ? `${(Number(plan.claimInterval) / 3600).toFixed(0)} Hours`
+                  : Number(plan.claimInterval) >= 60
+                  ? `${(Number(plan.claimInterval) / 60).toFixed(0)} Min`
+                  : `${Number(plan.claimInterval)} Sec`}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-gray-400 text-xs">Min Stake</p>
+              <p className="text-white">
+                {formatAmount(plan.minTokenAmount)} CRP
+              </p>
+            </div>
+
+            <div>
+              <p className="text-gray-400 text-xs">Total Staked</p>
+              <p className="text-yellow-400 font-bold">
+                {Number(planStakedAmounts[index] || 0).toLocaleString()} CRP
+              </p>
+              <p className="text-gray-500 text-xs">
+                ≈ ₹{crpToINR(Number(planStakedAmounts[index] || 0))}
+              </p>
+            </div>
+          </div>
         </div>
-      )}
+      ))
+    )}
+  </div>
+)}
 
       {/* ── TAB: CREATE PLAN ── */}
       {activeTab === "create" && (

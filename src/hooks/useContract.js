@@ -5,41 +5,79 @@ import {
   ABI,
   TOKEN_ADDRESS,
   TOKEN_ABI,
+  PAIR_ABI,
+  ORACLE_ABI,
+  ERC20_METADATA_ABI,
+  RPC_URL,
 } from "../contract/config";
 
+function scaleTo1e18(amount, decimals) {
+  const value = BigInt(amount.toString());
+
+  if (decimals === 18) return value;
+  if (decimals < 18) return value * 10n ** BigInt(18 - decimals);
+
+  return value / 10n ** BigInt(decimals - 18);
+}
+
 export function useContract(signer, provider) {
+  const readProvider = useMemo(() => {
+    if (provider) return provider;
+    if (signer?.provider) return signer.provider;
+    return new ethers.JsonRpcProvider(RPC_URL);
+  }, [provider, signer]);
+
   const stakingReader = useMemo(() => {
-    return provider ? new ethers.Contract(CONTRACT_ADDRESS, ABI, provider) : null;
-  }, [provider]);
+    return readProvider
+      ? new ethers.Contract(CONTRACT_ADDRESS, ABI, readProvider)
+      : null;
+  }, [readProvider]);
 
   const stakingContract = useMemo(() => {
     return signer ? new ethers.Contract(CONTRACT_ADDRESS, ABI, signer) : null;
   }, [signer]);
 
   const tokenContract = useMemo(() => {
-    return signer ? new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, signer) : null;
+    return signer
+      ? new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, signer)
+      : null;
   }, [signer]);
 
   // ─── READ FUNCTIONS ────────────────────────────────
 
   const fetchPlans = useCallback(async () => {
     if (!stakingReader) return [];
-    return await stakingReader.getAllPlans();
+    try {
+      return await stakingReader.getAllPlans();
+    } catch (err) {
+      console.error("fetchPlans error:", err);
+      return [];
+    }
   }, [stakingReader]);
 
   const fetchUserStakes = useCallback(
     async (userAddress) => {
-      if (!stakingReader) return [];
-      return await stakingReader.getUserAllStakes(userAddress);
+      if (!stakingReader || !userAddress) return [];
+      try {
+        return await stakingReader.getUserAllStakes(userAddress);
+      } catch (err) {
+        console.error("fetchUserStakes error:", err);
+        return [];
+      }
     },
     [stakingReader]
   );
 
   const fetchClaimable = useCallback(
     async (userAddress, index) => {
-      if (!stakingReader) return "0";
-      const amount = await stakingReader.claimable(userAddress, index);
-      return ethers.formatEther(amount);
+      if (!stakingReader || !userAddress) return "0";
+      try {
+        const amount = await stakingReader.claimable(userAddress, index);
+        return ethers.formatEther(amount);
+      } catch (err) {
+        console.error("fetchClaimable error:", err);
+        return "0";
+      }
     },
     [stakingReader]
   );
@@ -49,45 +87,146 @@ export function useContract(signer, provider) {
       return { totalStaked: "0", totalStakers: "0", maxTVL: "0" };
     }
 
-    const [totalStaked, totalStakers, maxTVL] = await Promise.all([
-      stakingReader.totalStaked(),
-      stakingReader.totalUniqueStakers(),
-      stakingReader.maxTVL(),
-    ]);
-
-    return {
-      totalStaked: ethers.formatEther(totalStaked),
-      totalStakers: totalStakers.toString(),
-      maxTVL: ethers.formatEther(maxTVL),
-    };
-  }, [stakingReader]);
-
-  const fetchTVLValue = useCallback(async () => {
-    if (!stakingReader) return "0";
     try {
-      const tvl = await stakingReader.getTVLValue();
-      return ethers.formatUnits(tvl, 18);
-    } catch {
-      return "0";
+      const [totalStaked, totalStakers, maxTVL] = await Promise.all([
+        stakingReader.totalStaked(),
+        stakingReader.totalUniqueStakers(),
+        stakingReader.maxTVL(),
+      ]);
+
+      return {
+        totalStaked: ethers.formatEther(totalStaked),
+        totalStakers: totalStakers.toString(),
+        maxTVL: ethers.formatEther(maxTVL),
+      };
+    } catch (err) {
+      console.error("fetchStats error:", err);
+      return { totalStaked: "0", totalStakers: "0", maxTVL: "0" };
     }
   }, [stakingReader]);
 
   const fetchTokenPrice = useCallback(async () => {
-    if (!stakingReader) return "0";
+    if (!stakingReader || !readProvider) return "0";
+
     try {
       const price = await stakingReader.getSafeTokenPrice();
       return ethers.formatUnits(price, 8);
     } catch {
-      return "0";
+      try {
+        const [pairAddr, feedAddr, crpAddr] = await Promise.all([
+          stakingReader.pairAddress(),
+          stakingReader.priceFeed(),
+          stakingReader.crypPayToken(),
+        ]);
+
+        if (
+          !pairAddr ||
+          !feedAddr ||
+          !crpAddr ||
+          pairAddr === ethers.ZeroAddress ||
+          feedAddr === ethers.ZeroAddress ||
+          crpAddr === ethers.ZeroAddress
+        ) {
+          return "0";
+        }
+
+        const pair = new ethers.Contract(pairAddr, PAIR_ABI, readProvider);
+        const oracle = new ethers.Contract(feedAddr, ORACLE_ABI, readProvider);
+
+        const [reserveData, token0, token1, oracleDecimalsRaw, roundData] =
+          await Promise.all([
+            pair.getReserves(),
+            pair.token0(),
+            pair.token1(),
+            oracle.decimals(),
+            oracle.latestRoundData(),
+          ]);
+
+        const reserve0 = reserveData[0];
+        const reserve1 = reserveData[1];
+
+        const quoteUsdPrice = roundData[1];
+        if (quoteUsdPrice <= 0n) return "0";
+
+        const token0Meta = new ethers.Contract(
+          token0,
+          ERC20_METADATA_ABI,
+          readProvider
+        );
+        const token1Meta = new ethers.Contract(
+          token1,
+          ERC20_METADATA_ABI,
+          readProvider
+        );
+
+        const [d0Raw, d1Raw] = await Promise.all([
+          token0Meta.decimals(),
+          token1Meta.decimals(),
+        ]);
+
+        const d0 = Number(d0Raw);
+        const d1 = Number(d1Raw);
+        const oracleDecimals = Number(oracleDecimalsRaw);
+
+        const r0 = scaleTo1e18(reserve0, d0);
+        const r1 = scaleTo1e18(reserve1, d1);
+
+        let pairPriceInQuote = 0n;
+
+        if (token0.toLowerCase() === crpAddr.toLowerCase()) {
+          if (r0 === 0n) return "0";
+          pairPriceInQuote = (r1 * 10n ** 18n) / r0;
+        } else if (token1.toLowerCase() === crpAddr.toLowerCase()) {
+          if (r1 === 0n) return "0";
+          pairPriceInQuote = (r0 * 10n ** 18n) / r1;
+        } else {
+          return "0";
+        }
+
+        const tokenUsdScaled =
+          (pairPriceInQuote * BigInt(quoteUsdPrice.toString())) / 10n ** 18n;
+
+        return ethers.formatUnits(tokenUsdScaled, oracleDecimals);
+      } catch (fallbackErr) {
+        console.error("Token price fallback error:", fallbackErr);
+        return "0";
+      }
     }
-  }, [stakingReader]);
+  }, [stakingReader, readProvider]);
+
+  const fetchTVLValue = useCallback(async () => {
+    if (!stakingReader) return "0";
+
+    try {
+      const tvl = await stakingReader.getTVLValue();
+      return ethers.formatUnits(tvl, 18);
+    } catch {
+      try {
+        const [totalStakedRaw, priceStr] = await Promise.all([
+          stakingReader.totalStaked(),
+          fetchTokenPrice(),
+        ]);
+
+        const totalStakedNum = Number(ethers.formatEther(totalStakedRaw));
+        const priceNum = Number(priceStr);
+
+        if (!totalStakedNum || !priceNum) return "0";
+
+        return (totalStakedNum * priceNum).toString();
+      } catch (err) {
+        console.error("TVL fallback error:", err);
+        return "0";
+      }
+    }
+  }, [stakingReader, fetchTokenPrice]);
 
   const fetchTotalDistributed = useCallback(async () => {
     if (!stakingReader) return "0";
     try {
       const total = await stakingReader.totalReleasedDistributed();
       return ethers.formatEther(total);
-    } catch {
+    } catch (err) {
+      console.error("fetchTotalDistributed error:", err);
       return "0";
     }
   }, [stakingReader]);
@@ -97,18 +236,20 @@ export function useContract(signer, provider) {
     try {
       const total = await stakingReader.totalGlobalWithdrawn();
       return ethers.formatEther(total);
-    } catch {
+    } catch (err) {
+      console.error("fetchTotalWithdrawn error:", err);
       return "0";
     }
   }, [stakingReader]);
 
   const fetchUserStakeCount = useCallback(
     async (userAddress) => {
-      if (!stakingReader) return "0";
+      if (!stakingReader || !userAddress) return "0";
       try {
         const count = await stakingReader.userStakeCount(userAddress);
         return count.toString();
-      } catch {
+      } catch (err) {
+        console.error("fetchUserStakeCount error:", err);
         return "0";
       }
     },
@@ -121,7 +262,8 @@ export function useContract(signer, provider) {
       try {
         const total = await stakingReader.totalStakedInPlan(planId);
         return ethers.formatEther(total);
-      } catch {
+      } catch (err) {
+        console.error("fetchTotalStakedInPlan error:", err);
         return "0";
       }
     },
@@ -137,7 +279,8 @@ export function useContract(signer, provider) {
           ethers.parseEther(amount.toString())
         );
         return ethers.formatEther(projected);
-      } catch {
+      } catch (err) {
+        console.error("fetchProjectedRelease error:", err);
         return "0";
       }
     },
@@ -149,7 +292,8 @@ export function useContract(signer, provider) {
       if (!stakingReader) return false;
       try {
         return await stakingReader.planPaused(planId);
-      } catch {
+      } catch (err) {
+        console.error("fetchPlanPaused error:", err);
         return false;
       }
     },
@@ -161,7 +305,34 @@ export function useContract(signer, provider) {
       if (!stakingReader) return false;
       try {
         return await stakingReader.planEmergency(planId);
-      } catch {
+      } catch (err) {
+        console.error("fetchPlanEmergency error:", err);
+        return false;
+      }
+    },
+    [stakingReader]
+  );
+
+  const fetchPlanClaimPaused = useCallback(
+    async (planId) => {
+      if (!stakingReader) return false;
+      try {
+        return await stakingReader.planClaimPaused(planId);
+      } catch (err) {
+        console.error("fetchPlanClaimPaused error:", err);
+        return false;
+      }
+    },
+    [stakingReader]
+  );
+
+  const fetchPlanEmergencyWithdrawPaused = useCallback(
+    async (planId) => {
+      if (!stakingReader) return false;
+      try {
+        return await stakingReader.planEmergencyWithdrawPaused(planId);
+      } catch (err) {
+        console.error("fetchPlanEmergencyWithdrawPaused error:", err);
         return false;
       }
     },
@@ -172,17 +343,19 @@ export function useContract(signer, provider) {
     if (!stakingReader) return false;
     try {
       return await stakingReader.emergencyMode();
-    } catch {
+    } catch (err) {
+      console.error("fetchEmergencyMode error:", err);
       return false;
     }
   }, [stakingReader]);
 
   const fetchHasStakedBefore = useCallback(
     async (userAddress) => {
-      if (!stakingReader) return false;
+      if (!stakingReader || !userAddress) return false;
       try {
         return await stakingReader.hasStakedBefore(userAddress);
-      } catch {
+      } catch (err) {
+        console.error("fetchHasStakedBefore error:", err);
         return false;
       }
     },
@@ -191,7 +364,9 @@ export function useContract(signer, provider) {
 
   const fetchUSDtoINR = useCallback(async () => {
     try {
-      const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
+      const response = await fetch(
+        "https://api.exchangerate-api.com/v4/latest/USD"
+      );
       const data = await response.json();
       return data.rates?.INR || 83.5;
     } catch {
@@ -203,7 +378,8 @@ export function useContract(signer, provider) {
     if (!stakingReader) return "";
     try {
       return await stakingReader.owner();
-    } catch {
+    } catch (err) {
+      console.error("fetchOwner error:", err);
       return "";
     }
   }, [stakingReader]);
@@ -212,7 +388,8 @@ export function useContract(signer, provider) {
     if (!stakingReader) return "";
     try {
       return await stakingReader.pairAddress();
-    } catch {
+    } catch (err) {
+      console.error("fetchPairAddress error:", err);
       return "";
     }
   }, [stakingReader]);
@@ -221,7 +398,8 @@ export function useContract(signer, provider) {
     if (!stakingReader) return "";
     try {
       return await stakingReader.priceFeed();
-    } catch {
+    } catch (err) {
+      console.error("fetchPriceFeedAddress error:", err);
       return "";
     }
   }, [stakingReader]);
@@ -230,7 +408,8 @@ export function useContract(signer, provider) {
     if (!stakingReader) return false;
     try {
       return await stakingReader.paused();
-    } catch {
+    } catch (err) {
+      console.error("fetchPaused error:", err);
       return false;
     }
   }, [stakingReader]);
@@ -239,8 +418,9 @@ export function useContract(signer, provider) {
     if (!stakingReader) return "0";
     try {
       const price = await stakingReader.getTWAPPrice();
-      return ethers.formatUnits(price, 8);
-    } catch {
+      return ethers.formatUnits(price, 18);
+    } catch (err) {
+      console.error("fetchTWAPPrice error:", err);
       return "0";
     }
   }, [stakingReader]);
@@ -249,7 +429,8 @@ export function useContract(signer, provider) {
     if (!stakingReader) return "";
     try {
       return await stakingReader.crypPayToken();
-    } catch {
+    } catch (err) {
+      console.error("fetchCrypPayToken error:", err);
       return "";
     }
   }, [stakingReader]);
@@ -266,75 +447,141 @@ export function useContract(signer, provider) {
     [stakingContract]
   );
 
-  const fetchContractEvents = useCallback(async () => {
-    try {
-      const apiUrl = `https://api-testnet.bscscan.com/api?module=logs&action=getLogs&address=${CONTRACT_ADDRESS}&fromBlock=0&toBlock=latest&apikey=YourApiKeyToken`;
+  const fetchContractEvents = useCallback(
+    async (userAddress) => {
+      if (!stakingReader || !readProvider || !userAddress) return [];
 
-      const response = await fetch(apiUrl);
-      const data = await response.json();
+      try {
+        const latestBlock = await readProvider.getBlockNumber();
+        const chunkSize = 50000;
+        const blockCache = new Map();
 
-      if (data.status !== "1" || !data.result) return [];
-
-      const eventABI = [
-        "event UserStaked(address indexed user, uint256 indexed planId, string planName, uint256 amount, uint256 unlockTime)",
-        "event UserClaimed(address indexed user, uint256 indexed stakeIndex, uint256 amount, uint256 totalClaimed, uint256 remaining)",
-        "event UserWithdrawn(address indexed user, uint256 indexed planId, uint256 principalReleased, uint256 totalClaimed, uint256 unlockTime)",
-        "event EmergencyWithdrawn(address indexed user, uint256 indexed planId, uint256 amount, uint256 penalty)",
-      ];
-
-      const iface = new ethers.Interface(eventABI);
-      const allEvents = [];
-
-      for (const log of data.result) {
-        try {
-          const parsed = iface.parseLog({ topics: log.topics, data: log.data });
-          if (!parsed) continue;
-
-          let type = "";
-          let amount = "0";
-          let user = "";
-
-          if (parsed.name === "UserStaked") {
-            type = "Stake";
-            user = parsed.args[0];
-            amount = ethers.formatEther(parsed.args[3]);
-          } else if (parsed.name === "UserClaimed") {
-            type = "Claim";
-            user = parsed.args[0];
-            amount = ethers.formatEther(parsed.args[2]);
-          } else if (parsed.name === "UserWithdrawn") {
-            type = "Withdraw";
-            user = parsed.args[0];
-            amount = ethers.formatEther(parsed.args[2]);
-          } else if (parsed.name === "EmergencyWithdrawn") {
-            type = "Emergency";
-            user = parsed.args[0];
-            amount = ethers.formatEther(parsed.args[2]);
-          } else {
-            continue;
+        const getBlockTimestamp = async (blockNumber) => {
+          if (blockCache.has(blockNumber)) {
+            return blockCache.get(blockNumber);
           }
 
-          allEvents.push({
-            type,
-            user,
-            amount,
-            txHash: log.transactionHash,
-            blockNumber: parseInt(log.blockNumber, 16),
-            planName: parsed.name === "UserStaked" ? parsed.args[2] : "",
-            timestamp: parseInt(log.timeStamp, 16),
-          });
-        } catch {
-          continue;
-        }
-      }
+          const block = await readProvider.getBlock(blockNumber);
+          const ts = block?.timestamp ? Number(block.timestamp) : 0;
+          blockCache.set(blockNumber, ts);
+          return ts;
+        };
 
-      allEvents.sort((a, b) => b.blockNumber - a.blockNumber);
-      return allEvents;
-    } catch (err) {
-      console.error("Event fetch error:", err);
-      return [];
-    }
-  }, []);
+        const collectLogs = async (filter) => {
+          const logs = [];
+
+          for (
+            let fromBlock = 0;
+            fromBlock <= latestBlock;
+            fromBlock += chunkSize + 1
+          ) {
+            const toBlock = Math.min(fromBlock + chunkSize, latestBlock);
+
+            try {
+              const part = await stakingReader.queryFilter(
+                filter,
+                fromBlock,
+                toBlock
+              );
+              logs.push(...part);
+            } catch (chunkErr) {
+              console.error(
+                `queryFilter failed for blocks ${fromBlock}-${toBlock}:`,
+                chunkErr
+              );
+            }
+          }
+
+          return logs;
+        };
+
+        const [stakedLogs, claimedLogs, withdrawnLogs, emergencyLogs] =
+          await Promise.all([
+            collectLogs(stakingReader.filters.UserStaked(userAddress)),
+            collectLogs(stakingReader.filters.UserClaimed(userAddress)),
+            collectLogs(stakingReader.filters.UserWithdrawn(userAddress)),
+            collectLogs(stakingReader.filters.EmergencyWithdrawn(userAddress)),
+          ]);
+
+        const allEvents = [];
+
+        for (const log of stakedLogs) {
+          allEvents.push({
+            type: "Stake",
+            user: log.args?.user ?? log.args?.[0] ?? "",
+            planId: Number(log.args?.planId ?? log.args?.[1] ?? 0),
+            stakeIndex: null,
+            planName: log.args?.planName ?? log.args?.[2] ?? "",
+            amount: ethers.formatEther(log.args?.amount ?? log.args?.[3] ?? 0),
+            txHash: log.transactionHash,
+            blockNumber: Number(log.blockNumber),
+            logIndex: Number(log.index ?? log.logIndex ?? 0),
+            timestamp: await getBlockTimestamp(Number(log.blockNumber)),
+          });
+        }
+
+        for (const log of claimedLogs) {
+          allEvents.push({
+            type: "Claim",
+            user: log.args?.user ?? log.args?.[0] ?? "",
+            planId: null,
+            stakeIndex: Number(log.args?.stakeIndex ?? log.args?.[1] ?? 0),
+            planName: "",
+            amount: ethers.formatEther(log.args?.amount ?? log.args?.[2] ?? 0),
+            txHash: log.transactionHash,
+            blockNumber: Number(log.blockNumber),
+            logIndex: Number(log.index ?? log.logIndex ?? 0),
+            timestamp: await getBlockTimestamp(Number(log.blockNumber)),
+          });
+        }
+
+        for (const log of withdrawnLogs) {
+          allEvents.push({
+            type: "Withdraw",
+            user: log.args?.user ?? log.args?.[0] ?? "",
+            planId: Number(log.args?.planId ?? log.args?.[1] ?? 0),
+            stakeIndex: null,
+            planName: "",
+            amount: ethers.formatEther(
+              log.args?.principalReleased ?? log.args?.[2] ?? 0
+            ),
+            txHash: log.transactionHash,
+            blockNumber: Number(log.blockNumber),
+            logIndex: Number(log.index ?? log.logIndex ?? 0),
+            timestamp: await getBlockTimestamp(Number(log.blockNumber)),
+          });
+        }
+
+        for (const log of emergencyLogs) {
+          allEvents.push({
+            type: "Emergency",
+            user: log.args?.user ?? log.args?.[0] ?? "",
+            planId: Number(log.args?.planId ?? log.args?.[1] ?? 0),
+            stakeIndex: null,
+            planName: "",
+            amount: ethers.formatEther(log.args?.amount ?? log.args?.[2] ?? 0),
+            txHash: log.transactionHash,
+            blockNumber: Number(log.blockNumber),
+            logIndex: Number(log.index ?? log.logIndex ?? 0),
+            timestamp: await getBlockTimestamp(Number(log.blockNumber)),
+          });
+        }
+
+        allEvents.sort((a, b) => {
+          if (b.blockNumber !== a.blockNumber) {
+            return b.blockNumber - a.blockNumber;
+          }
+          return b.logIndex - a.logIndex;
+        });
+
+        return allEvents;
+      } catch (err) {
+        console.error("fetchContractEvents error:", err);
+        return [];
+      }
+    },
+    [stakingReader, readProvider]
+  );
 
   // ─── WRITE FUNCTIONS ───────────────────────────────
 
@@ -414,6 +661,8 @@ export function useContract(signer, provider) {
     fetchPlanPaused,
     fetchPlanEmergency,
     fetchEmergencyMode,
+    fetchPlanClaimPaused,
+    fetchPlanEmergencyWithdrawPaused,
     fetchHasStakedBefore,
     fetchUSDtoINR,
     fetchOwner,

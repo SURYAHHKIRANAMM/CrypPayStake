@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import { TOKEN_ADDRESS, TOKEN_ABI } from "../contract/config";
+import { TOKEN_ADDRESS, TOKEN_ABI, RPC_URL } from "../contract/config";
 
 export function useBalance(account, provider) {
   const [balance, setBalance] = useState("0");
@@ -9,13 +9,15 @@ export function useBalance(account, provider) {
     let ignore = false;
 
     async function run() {
-      if (!account || !provider) {
+      if (!account) {
         if (!ignore) setBalance("0");
         return;
       }
 
+      const readProvider = provider || new ethers.JsonRpcProvider(RPC_URL);
+
       try {
-        const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, provider);
+        const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, readProvider);
 
         const [rawBalance, decimals] = await Promise.all([
           token.balanceOf(account),

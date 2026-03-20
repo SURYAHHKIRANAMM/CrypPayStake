@@ -5,8 +5,17 @@ import { useContract } from "../hooks/useContract";
 import { useBalance } from "../hooks/useBalance";
 import APRCalculator from "./APRCalculator";
 
-export default function Stake({ account, signer, provider, connectWallet }) {
-  const { fetchPlans, stakeTokens, approveTokens } = useContract(signer, provider);
+export default function Stake({
+  account,
+  signer,
+  provider,
+  connectWallet,
+  onStakeSuccess,
+}) {
+  const { fetchPlans, stakeTokens, approveTokens } = useContract(
+    signer,
+    provider
+  );
   const balance = useBalance(account, provider);
 
   const [plans, setPlans] = useState([]);
@@ -17,18 +26,13 @@ export default function Stake({ account, signer, provider, connectWallet }) {
   const [showCalculator, setShowCalculator] = useState(false);
 
   useEffect(() => {
-    if (!provider) {
-      setPlans([]);
-      return;
-    }
-
     let ignore = false;
 
     async function loadPlans() {
       try {
         const data = await fetchPlans();
         if (!ignore) {
-          setPlans(data);
+          setPlans(data || []);
         }
       } catch (err) {
         console.error("Plan load error:", err);
@@ -43,7 +47,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
     return () => {
       ignore = true;
     };
-  }, [provider, fetchPlans]);
+  }, [provider, signer, fetchPlans]);
 
   const handleStake = async (planId, minTokenAmount) => {
     if (!account) {
@@ -95,6 +99,10 @@ export default function Stake({ account, signer, provider, connectWallet }) {
 
       setAmount("");
       setSelectedPlan(null);
+
+      // ✅ Dashboard / parent refresh trigger
+      window.dispatchEvent(new Event("stake-success"));
+      onStakeSuccess?.();
     } catch (err) {
       toast.dismiss();
       console.error(err);
@@ -226,9 +234,7 @@ export default function Stake({ account, signer, provider, connectWallet }) {
               <div className="space-y-2 text-sm mb-5">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Lock Period</span>
-                  <span className="text-white font-semibold">
-                    {lockDisplay}
-                  </span>
+                  <span className="text-white font-semibold">{lockDisplay}</span>
                 </div>
 
                 <div className="flex justify-between">

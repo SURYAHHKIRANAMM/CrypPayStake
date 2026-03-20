@@ -10,7 +10,7 @@ export default function WalletButton({ provider }) {
     <div className="flex items-center gap-3">
       {address && (
         <span className="text-blue-400 text-sm bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
-          {Number(balance || 0).toFixed(2)} tCRP
+          {Number(balance || 0).toFixed(2)} CrypPay (CRP)
         </span>
       )}
 

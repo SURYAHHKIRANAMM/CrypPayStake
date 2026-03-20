@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import { useContract } from "../hooks/useContract";
 import { useBalance } from "../hooks/useBalance";
+import { BSCSCAN_BASE_URL } from "../contract/config";
 
 export default function UserDashboard({ account, signer, provider }) {
   const {
@@ -10,13 +11,13 @@ export default function UserDashboard({ account, signer, provider }) {
     fetchClaimable,
     fetchPlans,
     fetchStats,
-    fetchTVLValue,
     fetchTokenPrice,
     fetchTotalDistributed,
     fetchUserStakeCount,
     fetchEmergencyMode,
+    fetchPlanEmergency,
+    fetchContractEvents,
     claimTokens,
-    withdrawTokens,
     emergencyWithdrawTokens,
   } = useContract(signer, provider);
 
@@ -25,21 +26,24 @@ export default function UserDashboard({ account, signer, provider }) {
   const [stakes, setStakes] = useState([]);
   const [plans, setPlans] = useState([]);
   const [claimables, setClaimables] = useState([]);
+  const [historyEvents, setHistoryEvents] = useState([]);
   const [stats, setStats] = useState({
     totalStaked: "0",
     totalStakers: "0",
     maxTVL: "0",
   });
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(null);
   const [activeSection, setActiveSection] = useState("active");
   const [tokenPrice, setTokenPrice] = useState("0");
-  const [tvlUSD, setTvlUSD] = useState("0");
   const [totalDistributed, setTotalDistributed] = useState("0");
   const [userStakeCount, setUserStakeCount] = useState("0");
   const [emergencyMode, setEmergencyMode] = useState(false);
+  const [planEmergencyStatusMap, setPlanEmergencyStatusMap] = useState({});
 
   const fmtDate = useCallback((ts) => {
+    if (!ts || Number(ts) <= 0) return "—";
+
     return new Date(Number(ts) * 1000).toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short",
@@ -51,55 +55,108 @@ export default function UserDashboard({ account, signer, provider }) {
     return Date.now() / 1000 >= Number(stake.unlockTime);
   }, []);
 
+  const buildFallbackHistory = useCallback((stakeData, planData) => {
+    return (stakeData || []).map((stake, i) => {
+      const planId = Number(stake.planId);
+      const plan = planData?.[planId];
+      return {
+        type: "Stake",
+        user: account,
+        planId,
+        stakeIndex: i,
+        planName: plan ? plan.name : `Plan #${planId}`,
+        amount: ethers.formatUnits(stake.amount || 0, 18),
+        txHash: "",
+        blockNumber: 0,
+        logIndex: 0,
+        timestamp: Number(stake.startTime || 0),
+      };
+    });
+  }, [account]);
+
   // Load all data
   const loadData = useCallback(async () => {
     if (!account) {
       setStakes([]);
       setPlans([]);
       setClaimables([]);
+      setHistoryEvents([]);
       setStats({ totalStaked: "0", totalStakers: "0", maxTVL: "0" });
       setTokenPrice("0");
-      setTvlUSD("0");
       setTotalDistributed("0");
       setUserStakeCount("0");
       setEmergencyMode(false);
+      setPlanEmergencyStatusMap({});
       return;
     }
 
     try {
-      const [
-        stakeData,
-        planData,
-        statData,
-        price,
-        tvl,
-        distributed,
-        stakeCount,
-        isEmergency,
-      ] = await Promise.all([
+      // Main dashboard data alag load karo
+      const results = await Promise.allSettled([
         fetchUserStakes(account),
         fetchPlans(),
         fetchStats(),
         fetchTokenPrice(),
-        fetchTVLValue(),
         fetchTotalDistributed(),
         fetchUserStakeCount(account),
         fetchEmergencyMode(),
       ]);
 
-      setStakes(stakeData);
-      setPlans(planData);
+      const stakeData =
+        results[0].status === "fulfilled" ? results[0].value : [];
+      const planData =
+        results[1].status === "fulfilled" ? results[1].value : [];
+      const statData =
+        results[2].status === "fulfilled"
+          ? results[2].value
+          : { totalStaked: "0", totalStakers: "0", maxTVL: "0" };
+      const price =
+        results[3].status === "fulfilled" ? results[3].value : "0";
+      const distributed =
+        results[4].status === "fulfilled" ? results[4].value : "0";
+      const stakeCount =
+        results[5].status === "fulfilled" ? results[5].value : "0";
+      const isEmergency =
+        results[6].status === "fulfilled" ? results[6].value : false;
+
+      setStakes(stakeData || []);
+      setPlans(planData || []);
       setStats(statData);
-      setTokenPrice(price);
-      setTvlUSD(tvl);
-      setTotalDistributed(distributed);
-      setUserStakeCount(stakeCount);
-      setEmergencyMode(isEmergency);
+      setTokenPrice(price || "0");
+      setTotalDistributed(distributed || "0");
+      setUserStakeCount(stakeCount || "0");
+      setEmergencyMode(!!isEmergency);
 
       const rewards = await Promise.all(
-        stakeData.map((_, i) => fetchClaimable(account, i))
+        (stakeData || []).map((_, i) => fetchClaimable(account, i))
       );
-      setClaimables(rewards);
+      setClaimables(rewards || []);
+
+      const emergencyStatuses = {};
+      await Promise.all(
+        (planData || []).map(async (_, i) => {
+          try {
+            emergencyStatuses[i] = await fetchPlanEmergency(i);
+          } catch {
+            emergencyStatuses[i] = false;
+          }
+        })
+      );
+      setPlanEmergencyStatusMap(emergencyStatuses);
+
+      // History alag load karo, taaki history fail hone par dashboard blank na ho
+      try {
+        const events = await fetchContractEvents(account);
+
+        if (events && events.length > 0) {
+          setHistoryEvents(events);
+        } else {
+          setHistoryEvents(buildFallbackHistory(stakeData, planData));
+        }
+      } catch (historyErr) {
+        console.error("History load error:", historyErr);
+        setHistoryEvents(buildFallbackHistory(stakeData, planData));
+      }
     } catch (err) {
       console.error("Dashboard load error:", err);
     }
@@ -109,15 +166,30 @@ export default function UserDashboard({ account, signer, provider }) {
     fetchClaimable,
     fetchPlans,
     fetchStats,
-    fetchTVLValue,
     fetchTokenPrice,
     fetchTotalDistributed,
     fetchUserStakeCount,
     fetchEmergencyMode,
+    fetchPlanEmergency,
+    fetchContractEvents,
+    buildFallbackHistory,
   ]);
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // Stake success listener — dashboard auto refresh
+  useEffect(() => {
+    const handleStakeSuccess = () => {
+      loadData();
+    };
+
+    window.addEventListener("stake-success", handleStakeSuccess);
+
+    return () => {
+      window.removeEventListener("stake-success", handleStakeSuccess);
+    };
   }, [loadData]);
 
   // Auto refresh every 30 seconds
@@ -134,7 +206,7 @@ export default function UserDashboard({ account, signer, provider }) {
     toast.dismiss();
     toast.success(
       <a
-        href={"https://testnet.bscscan.com/tx/" + hash}
+        href={`${BSCSCAN_BASE_URL}/tx/${hash}`}
         target="_blank"
         rel="noopener noreferrer"
         className="underline text-blue-400"
@@ -157,7 +229,13 @@ export default function UserDashboard({ account, signer, provider }) {
         await tx.wait();
       }
 
-      txToast(tx.hash);
+      if (tx?.hash) {
+        txToast(tx.hash);
+      } else {
+        toast.dismiss();
+        toast.success("✅ Transaction successful");
+      }
+
       await loadData();
     } catch (err) {
       toast.dismiss();
@@ -172,18 +250,10 @@ export default function UserDashboard({ account, signer, provider }) {
   const handleClaim = (index) =>
     runTx(() => claimTokens(index), index, "Claiming...", "Claim failed ❌");
 
-  const handleWithdraw = (index) =>
-    runTx(
-      () => withdrawTokens(index),
-      index,
-      "Withdrawing...",
-      "Withdraw failed ❌"
-    );
-
   const handleEmergency = (index) => {
     if (
       !window.confirm(
-        "Are you sure you want to emergency withdraw? Penalty may apply!"
+        "Are you sure you want to emergency withdraw? Claimed amount will be adjusted from remaining balance."
       )
     ) {
       return;
@@ -254,14 +324,14 @@ export default function UserDashboard({ account, signer, provider }) {
         </button>
       </div>
 
-      {/* ─── PORTFOLIO SUMMARY ─── */}
+      {/* PORTFOLIO SUMMARY */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-center">
           <p className="text-gray-400 text-xs mb-1">Wallet Balance</p>
           <p className="text-yellow-400 font-bold text-lg">
             {Number(balance).toLocaleString()}
           </p>
-          <p className="text-gray-500 text-xs">tCRP</p>
+          <p className="text-gray-500 text-xs">CrypPay (CRP)</p>
         </div>
 
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-center">
@@ -269,7 +339,7 @@ export default function UserDashboard({ account, signer, provider }) {
           <p className="text-white font-bold text-lg">
             {totalUserStaked.toLocaleString()}
           </p>
-          <p className="text-gray-500 text-xs">CRP</p>
+          <p className="text-gray-500 text-xs">CrypPay (CRP)</p>
         </div>
 
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-center">
@@ -277,7 +347,7 @@ export default function UserDashboard({ account, signer, provider }) {
           <p className="text-green-400 font-bold text-lg">
             {totalUserClaimed.toLocaleString()}
           </p>
-          <p className="text-gray-500 text-xs">CRP</p>
+          <p className="text-gray-500 text-xs">CrypPay (CRP)</p>
         </div>
 
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-center">
@@ -285,7 +355,7 @@ export default function UserDashboard({ account, signer, provider }) {
           <p className="text-yellow-400 font-bold text-lg">
             {totalClaimableNow.toLocaleString()}
           </p>
-          <p className="text-gray-500 text-xs">CRP</p>
+          <p className="text-gray-500 text-xs">CrypPay (CRP)</p>
         </div>
 
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-center">
@@ -295,8 +365,8 @@ export default function UserDashboard({ account, signer, provider }) {
         </div>
       </div>
 
-      {/* ─── PLATFORM STATS ─── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      {/* PLATFORM STATS */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         <div className="bg-gray-800 border border-yellow-500/20 rounded-xl p-4 text-center">
           <p className="text-gray-400 text-xs mb-1">Platform Total Staked</p>
           <p className="text-yellow-400 font-bold">
@@ -305,16 +375,9 @@ export default function UserDashboard({ account, signer, provider }) {
         </div>
 
         <div className="bg-gray-800 border border-yellow-500/20 rounded-xl p-4 text-center">
-          <p className="text-gray-400 text-xs mb-1">CRP Token Price</p>
+          <p className="text-gray-400 text-xs mb-1">CrypPay (CRP) Price</p>
           <p className="text-yellow-400 font-bold">
             ${Number(tokenPrice) > 0 ? Number(tokenPrice).toFixed(6) : "N/A"}
-          </p>
-        </div>
-
-        <div className="bg-gray-800 border border-yellow-500/20 rounded-xl p-4 text-center">
-          <p className="text-gray-400 text-xs mb-1">TVL (USD)</p>
-          <p className="text-yellow-400 font-bold">
-            ${Number(tvlUSD) > 0 ? Number(tvlUSD).toLocaleString() : "N/A"}
           </p>
         </div>
 
@@ -326,7 +389,7 @@ export default function UserDashboard({ account, signer, provider }) {
         </div>
       </div>
 
-      {/* ─── OVERVIEW BAR ─── */}
+      {/* OVERVIEW BAR */}
       <div className="flex items-center justify-between bg-gray-800 border border-gray-700 rounded-xl p-4 mb-8">
         <div className="flex gap-6 text-sm">
           <span className="text-gray-400">
@@ -348,7 +411,7 @@ export default function UserDashboard({ account, signer, provider }) {
         </div>
       </div>
 
-      {/* ─── SECTION TABS ─── */}
+      {/* SECTION TABS */}
       <div className="flex gap-3 mb-6">
         <button
           onClick={() => setActiveSection("active")}
@@ -378,11 +441,11 @@ export default function UserDashboard({ account, signer, provider }) {
               : "bg-gray-800 text-gray-400 hover:text-yellow-400"
           }`}
         >
-          History ({stakes.length})
+          History ({historyEvents.length})
         </button>
       </div>
 
-      {/* ─── ACTIVE STAKES ─── */}
+      {/* ACTIVE STAKES */}
       {activeSection === "active" && (
         <>
           {trueActive.length === 0 ? (
@@ -424,12 +487,15 @@ export default function UserDashboard({ account, signer, provider }) {
                 const progressPercent =
                   stakedAmt > 0 ? (claimedAmt / stakedAmt) * 100 : 0;
 
+                const canEmergencyWithdraw =
+                  emergencyMode ||
+                  planEmergencyStatusMap?.[stake.planId] === true;
+
                 return (
                   <div
                     key={i}
                     className="bg-gray-800 border border-gray-700 rounded-xl p-6"
                   >
-                    {/* Stake Header */}
                     <div className="flex justify-between items-center mb-4">
                       <div>
                         <h3 className="text-yellow-400 font-bold text-sm">
@@ -456,7 +522,6 @@ export default function UserDashboard({ account, signer, provider }) {
                       </span>
                     </div>
 
-                    {/* Stake Details */}
                     <div className="space-y-2 text-sm mb-4">
                       <div className="flex justify-between">
                         <span className="text-gray-400">Staked Amount</span>
@@ -502,7 +567,6 @@ export default function UserDashboard({ account, signer, provider }) {
                       </div>
                     </div>
 
-                    {/* Progress Bar */}
                     <div className="mb-4">
                       <div className="flex justify-between text-xs text-gray-400 mb-1">
                         <span>Progress</span>
@@ -516,39 +580,29 @@ export default function UserDashboard({ account, signer, provider }) {
                       </div>
                     </div>
 
-                    {/* Action Buttons */}
                     <div className="flex gap-2 flex-wrap">
-                      {!emergencyMode && (
+                      {!canEmergencyWithdraw && (
                         <button
-                          disabled={loading || Number(claimables[i] || 0) <= 0}
+                          disabled={
+                            loadingIndex === i ||
+                            Number(claimables[i] || 0) <= 0
+                          }
                           onClick={() => handleClaim(i)}
                           className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:opacity-50 px-3 py-2.5 rounded-full text-white font-bold text-sm transition"
                         >
-                          {loadingIndex === i && loading ? "..." : "Claim"}
+                          {loadingIndex === i ? "..." : "Claim"}
                         </button>
                       )}
 
-                      {emergencyMode && (
-                        <>
-                          <button
-                            disabled={loading}
-                            onClick={() => handleWithdraw(i)}
-                            className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 disabled:opacity-50 px-3 py-2.5 rounded-full text-black font-bold text-sm transition"
-                          >
-                            {loadingIndex === i && loading
-                              ? "..."
-                              : "Withdraw"}
-                          </button>
-
-                          <button
-                            disabled={loading}
-                            onClick={() => handleEmergency(i)}
-                            className="bg-red-600 hover:bg-red-500 disabled:opacity-50 px-3 py-2.5 rounded-full text-white font-bold text-sm transition"
-                            title="Emergency Withdraw"
-                          >
-                            🚨
-                          </button>
-                        </>
+                      {canEmergencyWithdraw && remainingAmt > 0 && (
+                        <button
+                          disabled={loadingIndex === i}
+                          onClick={() => handleEmergency(i)}
+                          className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-50 px-3 py-2.5 rounded-full text-white font-bold text-sm transition"
+                          title="Emergency Withdraw"
+                        >
+                          {loadingIndex === i ? "..." : "Emergency Withdraw"}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -559,7 +613,7 @@ export default function UserDashboard({ account, signer, provider }) {
         </>
       )}
 
-      {/* ─── CLAIMED / WITHDRAW ─── */}
+      {/* CLAIMED / WITHDRAW */}
       {activeSection === "completed" && (
         <>
           {completedStakes.length === 0 ? (
@@ -574,7 +628,7 @@ export default function UserDashboard({ account, signer, provider }) {
             <div className="grid md:grid-cols-2 gap-6">
               {stakes.map((stake, i) => {
                 if (stake.withdrawn) {
-                  // Show withdrawn stakes
+                  // withdrawn allowed
                 } else {
                   const staked = Number(
                     ethers.formatUnits(stake.amount || 0, 18)
@@ -694,21 +748,11 @@ export default function UserDashboard({ account, signer, provider }) {
                       </div>
                     </div>
 
-                    {!isWithdrawn && isUnlocked(stake) && (
-                      <button
-                        disabled={loading}
-                        onClick={() => handleWithdraw(i)}
-                        className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 disabled:opacity-50 px-3 py-2.5 rounded-full text-black font-bold text-sm transition"
-                      >
-                        {loadingIndex === i && loading ? "..." : "Withdraw"}
-                      </button>
-                    )}
-
-                    {!isWithdrawn && !isUnlocked(stake) && (
-                      <p className="text-gray-500 text-xs text-center">
-                        Waiting for unlock date to withdraw
-                      </p>
-                    )}
+                    <p className="text-gray-500 text-xs text-center">
+                      {isWithdrawn
+                        ? "Stake closed"
+                        : "Fully claimed — no further action required"}
+                    </p>
                   </div>
                 );
               })}
@@ -717,10 +761,10 @@ export default function UserDashboard({ account, signer, provider }) {
         </>
       )}
 
-      {/* ─── HISTORY ─── */}
+      {/* HISTORY */}
       {activeSection === "history" && (
         <>
-          {stakes.length === 0 ? (
+          {historyEvents.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <p className="text-5xl mb-4">📋</p>
               <p className="text-lg">No transaction records found</p>
@@ -730,115 +774,74 @@ export default function UserDashboard({ account, signer, provider }) {
             </div>
           ) : (
             <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
-              <div className="grid grid-cols-9 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
+              <div className="grid grid-cols-6 gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700">
                 <span>Sr.No</span>
+                <span>Type</span>
                 <span>Plan</span>
-                <span>Staked</span>
-                <span>Claimed</span>
-                <span>Start</span>
-                <span>Last Claim</span>
-                <span>Unlock</span>
-                <span>Status</span>
+                <span>Amount</span>
+                <span>Date</span>
                 <span className="text-right">BscScan</span>
               </div>
 
-              {stakes.map((stake, i) => {
-                const planId = Number(stake.planId);
-                const plan = plans[planId];
-                const planName = plan ? plan.name : `Plan #${planId}`;
-                const stakedAmt = Number(
-                  ethers.formatUnits(stake.amount || 0, 18)
-                );
-                const claimedAmt = Number(
-                  ethers.formatUnits(stake.claimed || 0, 18)
-                );
-                const isWithdrawn = stake.withdrawn;
-                const unlocked = isUnlocked(stake);
-                const progressPercent =
-                  stakedAmt > 0 ? (claimedAmt / stakedAmt) * 100 : 0;
+              {historyEvents.map((event, i) => (
+                <div
+                  key={`${event.txHash || "local"}-${i}`}
+                  className="grid grid-cols-6 gap-2 px-5 py-4 text-sm border-b border-gray-700/50 items-center"
+                >
+                  <span className="text-gray-500 text-xs">{i + 1}</span>
 
-                return (
-                  <div
-                    key={i}
-                    className={`grid grid-cols-9 gap-2 px-5 py-4 text-sm border-b border-gray-700/50 items-center ${
-                      isWithdrawn ? "opacity-50" : ""
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${
+                      event.type === "Stake"
+                        ? "bg-blue-900 text-blue-400"
+                        : event.type === "Claim"
+                        ? "bg-green-900 text-green-400"
+                        : event.type === "Withdraw"
+                        ? "bg-yellow-900 text-yellow-400"
+                        : "bg-red-900 text-red-400"
                     }`}
                   >
-                    <span className="text-gray-500 text-xs">{i + 1}</span>
-                    <span
-                      className="text-yellow-400 font-semibold text-xs truncate"
-                      title={planName}
-                    >
-                      {planName}
-                    </span>
-                    <span className="text-white font-semibold text-xs">
-                      {stakedAmt.toLocaleString()} CRP
-                    </span>
-                    <div>
-                      <span className="text-green-400 text-xs block">
-                        {claimedAmt.toLocaleString()} CRP
-                      </span>
-                      <span className="text-gray-500 text-xs">
-                        {progressPercent.toFixed(1)}%
-                      </span>
-                    </div>
-                    <span className="text-gray-300 text-xs">
-                      {fmtDate(stake.startTime)}
-                    </span>
-                    <span className="text-gray-300 text-xs">
-                      {Number(stake.lastClaimTime) > 0
-                        ? fmtDate(stake.lastClaimTime)
-                        : "—"}
-                    </span>
-                    <span className="text-gray-300 text-xs">
-                      {fmtDate(stake.unlockTime)}
-                    </span>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${
-                        isWithdrawn
-                          ? "bg-gray-700 text-gray-400"
-                          : progressPercent >= 100
-                          ? "bg-yellow-900 text-yellow-400"
-                          : unlocked
-                          ? "bg-green-900 text-green-400"
-                          : "bg-blue-900 text-blue-400"
-                      }`}
-                    >
-                      {isWithdrawn
-                        ? "Withdrawn"
-                        : progressPercent >= 100
-                        ? "Claimed"
-                        : unlocked
-                        ? "Unlocked"
-                        : "Locked"}
-                    </span>
+                    {event.type}
+                  </span>
+
+                  <span
+                    className="text-yellow-400 font-semibold text-xs truncate"
+                    title={event.planName || "-"}
+                  >
+                    {event.planName || "-"}
+                  </span>
+
+                  <span className="text-white font-semibold text-xs">
+                    {Number(event.amount || 0).toLocaleString()} CRP
+                  </span>
+
+                  <span className="text-gray-300 text-xs">
+                    {fmtDate(event.timestamp)}
+                  </span>
+
+                  {event.txHash ? (
                     <a
-                      href={`https://testnet.bscscan.com/address/${account}`}
+                      href={`${BSCSCAN_BASE_URL}/tx/${event.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-blue-400 hover:underline text-right"
                     >
                       View 🔗
                     </a>
-                  </div>
-                );
-              })}
+                  ) : (
+                    <span className="text-xs text-gray-500 text-right">—</span>
+                  )}
+                </div>
+              ))}
 
-              <div className="grid grid-cols-9 gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700">
+              <div className="grid grid-cols-6 gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700">
                 <span className="text-gray-400">Total</span>
-                <span className="text-gray-400">{stakes.length} stakes</span>
-                <span className="text-white">
-                  {totalUserStaked.toLocaleString()}
-                </span>
-                <span className="text-green-400">
-                  {totalUserClaimed.toLocaleString()}
+                <span className="text-gray-400">
+                  {historyEvents.length} events
                 </span>
                 <span></span>
                 <span></span>
                 <span></span>
-                <span className="text-yellow-400">
-                  {trueActive.length} active
-                </span>
                 <span></span>
               </div>
             </div>
