@@ -1,4 +1,4 @@
-import { ADMIN_WALLET } from "../config/admin";
+import { ADMIN_WALLET, VIEWER_WALLETS } from "../contract/config";
 
 export default function AdminGuard({ account, children }) {
 
@@ -16,8 +16,12 @@ export default function AdminGuard({ account, children }) {
     );
   }
 
-  // Wallet connected but not admin
-  if (account.toLowerCase() !== ADMIN_WALLET.toLowerCase()) {
+  const addr = account.toLowerCase();
+  const isAdmin = addr === ADMIN_WALLET.toLowerCase();
+  const isViewer = VIEWER_WALLETS.includes(addr);
+
+  // Wallet connected but not admin or viewer
+  if (!isAdmin && !isViewer) {
     return (
       <div className="flex flex-col items-center justify-center mt-20 gap-4">
         <div className="text-red-500 text-xl font-semibold">
@@ -33,6 +37,6 @@ export default function AdminGuard({ account, children }) {
     );
   }
 
-  // Admin confirmed
+  // Admin or Viewer confirmed
   return children;
 }

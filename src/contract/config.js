@@ -36,9 +36,15 @@ export const ADMIN_WALLET =
   deployed.Owner ||
   "0x4fd0dbfC59B4D1257aA1fA3EC0981C6Bee1be572";
 
+// ✅ All viewer wallets — read-only admin access
 export const VIEWER_WALLET =
   import.meta.env.VITE_VIEWER_WALLET ||
   "0xec23685c637C28dD17dC07E600575A1141E250c0";
+ 
+export const VIEWER_WALLETS = [
+  VIEWER_WALLET,
+  "0x32385Efba0e1C2c589a90603cF3a9d4B28fD12E4",
+].map((addr) => addr.toLowerCase());
 
 /*
 -----------------------------------

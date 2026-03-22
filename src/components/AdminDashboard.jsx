@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import { useContract } from "../hooks/useContract";
-import { CONTRACT_ADDRESS, ABI, ADMIN_WALLET, VIEWER_WALLET } from "../contract/config";
+import { CONTRACT_ADDRESS, ABI, ADMIN_WALLET, VIEWER_WALLET, BSCSCAN_BASE_URL } from "../contract/config";
 
-export default function AdminDashboard({ account, signer, provider }) {
+export default function AdminDashboard({ account, signer, provider, isViewer: isViewerProp }) {
   const {
     fetchPlans,
     fetchStats,
@@ -93,13 +93,12 @@ export default function AdminDashboard({ account, signer, provider }) {
   const [stuckAmount, setStuckAmount] = useState("");
   const [emergencyMode, setEmergencyMode] = useState(false);
 
-  // Check if current user is full admin or viewer
+  // Check if current user is full admin or viewer (using prop from App.jsx)
   const adminWallet = ADMIN_WALLET?.toLowerCase?.() || "";
-  const viewerWallet = VIEWER_WALLET?.toLowerCase?.() || "";
   const currentAccount = account?.toLowerCase?.() || "";
 
-  const isFullAdmin = currentAccount === adminWallet;
-  const isViewer = currentAccount === viewerWallet;
+  const isViewer = !!isViewerProp;
+  const isFullAdmin = !isViewer && currentAccount === adminWallet;
 
   // ─── Contract Writer ──────────────────────────────────
   const getContract = useCallback(() => {
@@ -241,6 +240,23 @@ export default function AdminDashboard({ account, signer, provider }) {
 
     return () => clearInterval(interval);
   }, [provider, loadData]);
+
+  // ✅ Auto-load events when History tab is opened
+  useEffect(() => {
+    if (activeTab === "history" && txEvents.length === 0 && !eventsLoading) {
+      (async () => {
+        setEventsLoading(true);
+        try {
+          const events = await fetchContractEvents();
+          setTxEvents(events || []);
+        } catch (err) {
+          console.error("Auto-load events error:", err);
+        } finally {
+          setEventsLoading(false);
+        }
+      })();
+    }
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Helpers ─────────────────────────────────────────
   async function runTx(fn, successMsg, actionKey = "") {
@@ -569,7 +585,7 @@ async function handleWithdrawStuck() {
         <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
           <p className="text-gray-400 text-xs">Total Staked</p>
           <p className="text-yellow-400 text-xl font-bold mt-1">
-            {Number(stats.totalStaked).toLocaleString()} CRP
+            {Number(stats.totalStaked).toLocaleString()} CrypPay (CRP)
           </p>
           <p className="text-gray-500 text-xs">
             ≈ ₹{crpToINR(Number(stats.totalStaked))}
@@ -586,7 +602,7 @@ async function handleWithdrawStuck() {
           <p className="text-blue-400 text-xl font-bold mt-1">
             {Number(stats.maxTVL) === 0
               ? "No Cap"
-              : `${Number(stats.maxTVL).toLocaleString()} CRP`}
+              : `${Number(stats.maxTVL).toLocaleString()} CrypPay (CRP)`}
           </p>
         </div>
       </div>
@@ -594,7 +610,7 @@ async function handleWithdrawStuck() {
       {/* Extended Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-gray-800 rounded-xl p-4 border border-yellow-500/20">
-          <p className="text-gray-400 text-xs">CRP Token Price</p>
+          <p className="text-gray-400 text-xs">CrypPay (CRP) Coin Price</p>
           <p className="text-yellow-400 text-lg font-bold mt-1">
             ${Number(tokenPrice) > 0 ? Number(tokenPrice).toFixed(6) : "N/A"}
           </p>
@@ -608,13 +624,13 @@ async function handleWithdrawStuck() {
         <div className="bg-gray-800 rounded-xl p-4 border border-yellow-500/20">
           <p className="text-gray-400 text-xs">Total Distributed</p>
           <p className="text-green-400 text-lg font-bold mt-1">
-            {Number(totalDistributed).toLocaleString()} CRP
+            {Number(totalDistributed).toLocaleString()} CrypPay (CRP)
           </p>
         </div>
         <div className="bg-gray-800 rounded-xl p-4 border border-yellow-500/20">
           <p className="text-gray-400 text-xs">Total Withdrawn</p>
           <p className="text-orange-400 text-lg font-bold mt-1">
-            {Number(totalWithdrawn).toLocaleString()} CRP
+            {Number(totalWithdrawn).toLocaleString()} CrypPay (CRP)
           </p>
         </div>
       </div>
@@ -644,7 +660,7 @@ async function handleWithdrawStuck() {
                   {todayStakes.length}
                 </p>
                 <p className="text-gray-500 text-xs">
-                  {todayStakedCRP.toLocaleString()} CRP
+                  {todayStakedCRP.toLocaleString()} CrypPay (CRP)
                 </p>
               </div>
               <div className="text-center">
@@ -653,7 +669,7 @@ async function handleWithdrawStuck() {
                   {todayClaims.length}
                 </p>
                 <p className="text-gray-500 text-xs">
-                  {todayClaimedCRP.toLocaleString()} CRP
+                  {todayClaimedCRP.toLocaleString()} CrypPay (CRP)
                 </p>
               </div>
               <div className="text-center">
@@ -662,15 +678,15 @@ async function handleWithdrawStuck() {
                   {todayWithdraws.length}
                 </p>
                 <p className="text-gray-500 text-xs">
-                  {todayWithdrawnCRP.toLocaleString()} CRP
+                  {todayWithdrawnCRP.toLocaleString()} CrypPay (CRP)
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-gray-400 text-xs mb-1">Total CRP Moved</p>
+                <p className="text-gray-400 text-xs mb-1">Total CrypPay (CRP) Moved</p>
                 <p className="text-white font-bold text-lg">
                   {(todayStakedCRP + todayClaimedCRP + todayWithdrawnCRP).toLocaleString()}
                 </p>
-                <p className="text-gray-500 text-xs">CRP</p>
+                <p className="text-gray-500 text-xs">CrypPay (CRP)</p>
               </div>
             </div>
           );
@@ -873,14 +889,17 @@ async function handleWithdrawStuck() {
             <div>
               <p className="text-gray-400 text-xs">Min Stake</p>
               <p className="text-white">
-                {formatAmount(plan.minTokenAmount)} CRP
+                {formatAmount(plan.minTokenAmount)} CrypPay (CRP)
+              </p>
+              <p className="text-gray-500 text-xs">
+                ≈ ₹{crpToINR(Number(ethers.formatEther(plan.minTokenAmount)))}
               </p>
             </div>
 
             <div>
               <p className="text-gray-400 text-xs">Total Staked</p>
               <p className="text-yellow-400 font-bold">
-                {Number(planStakedAmounts[index] || 0).toLocaleString()} CRP
+                {Number(planStakedAmounts[index] || 0).toLocaleString()} CrypPay (CRP)
               </p>
               <p className="text-gray-500 text-xs">
                 ≈ ₹{crpToINR(Number(planStakedAmounts[index] || 0))}
@@ -926,7 +945,7 @@ async function handleWithdrawStuck() {
               type="number"
             />
             <InputField
-              label="Min Token Amount (CRP)"
+              label="Min CrypPay (CRP) Amount"
               value={planForm.minTokenAmount}
               onChange={(v) => setPlanForm({ ...planForm, minTokenAmount: v })}
               placeholder="e.g. 15000"
@@ -940,33 +959,6 @@ async function handleWithdrawStuck() {
       {/* ── TAB: ANALYTICS ── */}
       {activeTab === "analytics" && (
         <div className="space-y-6">
-          {/* Price & TVL */}
-          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-            <h2 className="text-white font-bold text-lg mb-5">💰 Price & TVL</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div>
-                <p className="text-gray-400 text-xs">CRP Token Price</p>
-                <p className="text-yellow-400 font-bold text-lg">
-                  ${Number(tokenPrice) > 0 ? Number(tokenPrice).toFixed(6) : "N/A"}
-                </p>
-              </div>
-              <div>
-                <p className="text-gray-400 text-xs">TVL (USD)</p>
-                <p className="text-yellow-400 font-bold text-lg">
-                  ${Number(tvlUSD) > 0 ? Number(tvlUSD).toLocaleString() : "N/A"}
-                </p>
-              </div>
-              <div>
-                <p className="text-gray-400 text-xs">Max TVL Cap</p>
-                <p className="text-blue-400 font-bold text-lg">
-                  {Number(stats.maxTVL) === 0
-                    ? "No Cap"
-                    : `${Number(stats.maxTVL).toLocaleString()} CRP`}
-                </p>
-              </div>
-            </div>
-          </div>
-
           {/* Per-Plan Stats */}
           <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
             <h2 className="text-white font-bold text-lg mb-5">📋 Per-Plan Breakdown</h2>
@@ -992,7 +984,7 @@ async function handleWithdrawStuck() {
                       {plan.name}
                     </span>
                     <span className="text-white font-bold text-xs">
-                      {Number(planStakedAmounts[index] || 0).toLocaleString()} CRP
+                      {Number(planStakedAmounts[index] || 0).toLocaleString()} CrypPay (CRP)
                     </span>
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full font-semibold inline-block w-fit ${
@@ -1063,9 +1055,9 @@ async function handleWithdrawStuck() {
                 </p>
               </div>
               <div>
-                <p className="text-gray-400 text-xs">CRP Token Contract</p>
+                <p className="text-gray-400 text-xs">CrypPay (CRP) Contract Address</p>
                 <a
-                  href={`https://testnet.bscscan.com/address/${tokenAddress}`}
+                  href={`${BSCSCAN_BASE_URL}/address/${tokenAddress}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-400 text-xs hover:underline break-all"
@@ -1100,7 +1092,7 @@ async function handleWithdrawStuck() {
                 setEventsLoading(true);
                 try {
                   const events = await fetchContractEvents();
-                  setTxEvents(events);
+                  setTxEvents(events || []);
                 } catch (err) {
                   console.error(err);
                   toast.error("Events load failed");
@@ -1110,16 +1102,24 @@ async function handleWithdrawStuck() {
               }}
               className="text-sm bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded transition"
             >
-              {eventsLoading ? "Loading..." : "🔄 Load Events"}
+              {eventsLoading ? "⏳ Loading..." : "🔄 Reload Events"}
             </button>
           </div>
 
-          {txEvents.length === 0 ? (
+          {/* Auto-load handled by useEffect */}
+          {eventsLoading && txEvents.length === 0 && (
+            <div className="text-center py-16 text-gray-400">
+              <p className="text-5xl mb-4">⏳</p>
+              <p className="text-lg">Loading events...</p>
+            </div>
+          )}
+
+          {txEvents.length === 0 && !eventsLoading ? (
             <div className="text-center py-16 text-gray-400">
               <p className="text-5xl mb-4">📜</p>
-              <p className="text-lg">Click Load Events to fetch data</p>
+              <p className="text-lg">No transaction records found</p>
               <p className="text-sm mt-2">
-                Events from last ~5,000 blocks will be shown
+                Click Reload Events or try again later
               </p>
             </div>
           ) : (
@@ -1182,19 +1182,19 @@ async function handleWithdrawStuck() {
                       <div className="bg-gray-900 rounded-lg p-3 text-center">
                         <p className="text-gray-400 text-xs">Staked</p>
                         <p className="text-green-400 font-bold">
-                          {todayStakedCRP.toLocaleString()} CRP
+                          {todayStakedCRP.toLocaleString()} CrypPay (CRP)
                         </p>
                       </div>
                       <div className="bg-gray-900 rounded-lg p-3 text-center">
                         <p className="text-gray-400 text-xs">Claimed</p>
                         <p className="text-yellow-400 font-bold">
-                          {todayClaimedCRP.toLocaleString()} CRP
+                          {todayClaimedCRP.toLocaleString()} CrypPay (CRP)
                         </p>
                       </div>
                       <div className="bg-gray-900 rounded-lg p-3 text-center">
                         <p className="text-gray-400 text-xs">Withdrawn</p>
                         <p className="text-orange-400 font-bold">
-                          {todayWithdrawnCRP.toLocaleString()} CRP
+                          {todayWithdrawnCRP.toLocaleString()} CrypPay (CRP)
                         </p>
                       </div>
                       <div className="bg-gray-900 rounded-lg p-3 text-center">
@@ -1235,7 +1235,7 @@ async function handleWithdrawStuck() {
                               {evt.type}
                             </span>
                             <a
-                              href={`https://testnet.bscscan.com/address/${evt.user}`}
+                              href={`${BSCSCAN_BASE_URL}/address/${evt.user}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-400 hover:underline truncate"
@@ -1243,7 +1243,7 @@ async function handleWithdrawStuck() {
                               {evt.user?.slice(0, 6)}...{evt.user?.slice(-4)}
                             </a>
                             <span className="text-white font-semibold">
-                              {Number(evt.amount).toLocaleString()} CRP
+                              {Number(evt.amount).toLocaleString()} CrypPay (CRP)
                             </span>
                             <span className="text-gray-400 truncate">
                               {evt.planName || "—"}
@@ -1258,7 +1258,7 @@ async function handleWithdrawStuck() {
                             </span>
                             <span className="text-gray-500">{evt.blockNumber}</span>
                             <a
-                              href={`https://testnet.bscscan.com/tx/${evt.txHash}`}
+                              href={`${BSCSCAN_BASE_URL}/tx/${evt.txHash}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-blue-400 hover:underline text-right truncate"
@@ -1304,7 +1304,7 @@ async function handleWithdrawStuck() {
                     </span>
 
                     <a
-                      href={`https://testnet.bscscan.com/address/${evt.user}`}
+                      href={`${BSCSCAN_BASE_URL}/address/${evt.user}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-blue-400 hover:underline truncate"
@@ -1313,7 +1313,7 @@ async function handleWithdrawStuck() {
                     </a>
 
                     <span className="text-white font-semibold text-xs">
-                      {Number(evt.amount).toLocaleString()} CRP
+                      {Number(evt.amount).toLocaleString()} CrypPay (CRP)
                     </span>
 
                     <span className="text-gray-300 text-xs">
@@ -1329,7 +1329,7 @@ async function handleWithdrawStuck() {
                     <span className="text-gray-500 text-xs">{evt.blockNumber}</span>
 
                     <a
-                      href={`https://testnet.bscscan.com/tx/${evt.txHash}`}
+                      href={`${BSCSCAN_BASE_URL}/tx/${evt.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-blue-400 hover:underline text-right truncate"
@@ -1345,7 +1345,7 @@ async function handleWithdrawStuck() {
                     {[...new Set(txEvents.map((e) => e.user))].length} wallets
                   </span>
                   <span className="text-white">
-                    {txEvents.reduce((s, e) => s + Number(e.amount), 0).toLocaleString()} CRP
+                    {txEvents.reduce((s, e) => s + Number(e.amount), 0).toLocaleString()} CrypPay (CRP)
                   </span>
                   <span></span>
                   <span></span>
@@ -1494,7 +1494,7 @@ async function handleWithdrawStuck() {
                 >
                   <span className="text-gray-500 text-xs">{idx + 1}</span>
                   <a
-                    href={`https://testnet.bscscan.com/address/${user.wallet}`}
+                    href={`${BSCSCAN_BASE_URL}/address/${user.wallet}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-400 text-xs hover:underline truncate"
@@ -1502,10 +1502,10 @@ async function handleWithdrawStuck() {
                     {user.wallet.slice(0, 6)}...{user.wallet.slice(-4)}
                   </a>
                   <span className="text-yellow-400 font-semibold text-xs">
-                    {user.totalStaked.toLocaleString()} CRP
+                    {user.totalStaked.toLocaleString()} CrypPay (CRP)
                   </span>
                   <span className="text-green-400 text-xs">
-                    {user.totalClaimed.toLocaleString()} CRP
+                    {user.totalClaimed.toLocaleString()} CrypPay (CRP)
                   </span>
                   <span className="text-white text-xs">{user.stakeCount}</span>
                   <span className="text-blue-400 text-xs">
@@ -1521,10 +1521,10 @@ async function handleWithdrawStuck() {
                 <span className="text-gray-400">Total</span>
                 <span className="text-gray-400">{allUsersData.length} users</span>
                 <span className="text-yellow-400">
-                  {allUsersData.reduce((s, u) => s + u.totalStaked, 0).toLocaleString()} CRP
+                  {allUsersData.reduce((s, u) => s + u.totalStaked, 0).toLocaleString()} CrypPay (CRP)
                 </span>
                 <span className="text-green-400">
-                  {allUsersData.reduce((s, u) => s + u.totalClaimed, 0).toLocaleString()} CRP
+                  {allUsersData.reduce((s, u) => s + u.totalClaimed, 0).toLocaleString()} CrypPay (CRP)
                 </span>
                 <span className="text-white">
                   {allUsersData.reduce((s, u) => s + u.stakeCount, 0)}
@@ -1548,7 +1548,7 @@ async function handleWithdrawStuck() {
                     <h3 className="text-white font-bold">
                       Wallet:{" "}
                       <a
-                        href={`https://testnet.bscscan.com/address/${searchedAddress}`}
+                        href={`${BSCSCAN_BASE_URL}/address/${searchedAddress}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:underline"
@@ -1572,7 +1572,7 @@ async function handleWithdrawStuck() {
                           0
                         )
                         .toLocaleString()}{" "}
-                      CRP
+                      CrypPay (CRP)
                     </p>
                     <p className="text-gray-500 text-xs">
                       ≈ ₹
@@ -1593,7 +1593,7 @@ async function handleWithdrawStuck() {
                           0
                         )
                         .toLocaleString()}{" "}
-                      CRP
+                      CrypPay (CRP)
                     </p>
                     <p className="text-gray-500 text-xs">
                       ≈ ₹
@@ -1611,7 +1611,7 @@ async function handleWithdrawStuck() {
                       {searchedClaimables
                         .reduce((s, c) => s + Number(c || 0), 0)
                         .toLocaleString()}{" "}
-                      CRP
+                      CrypPay (CRP)
                     </p>
                   </div>
                   <div className="bg-gray-900 rounded-lg p-3 text-center">
@@ -1765,7 +1765,7 @@ async function handleWithdrawStuck() {
             <h3 className="text-white font-semibold mb-4">📊 Set Max TVL</h3>
             <div className="space-y-3">
               <InputField
-                label="Max TVL (CRP) — 0 = No Cap"
+                label="Max TVL CrypPay (CRP) — 0 = No Cap"
                 value={maxTVL}
                 onChange={setMaxTVL}
                 placeholder="e.g. 1000000"
@@ -1786,7 +1786,7 @@ async function handleWithdrawStuck() {
                 type="number"
               />
               <InputField
-                label="New Min Amount (CRP)"
+                label="New Min CrypPay (CRP) Amount"
                 value={minAmount}
                 onChange={setMinAmount}
                 placeholder="e.g. 10000"
@@ -1851,7 +1851,7 @@ async function handleWithdrawStuck() {
               <div>
                 <p className="text-gray-400 text-xs mb-1">Contract Owner</p>
                 <a
-                  href={`https://testnet.bscscan.com/address/${contractOwner}`}
+                  href={`${BSCSCAN_BASE_URL}/address/${contractOwner}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-400 text-xs hover:underline break-all"
@@ -1864,7 +1864,7 @@ async function handleWithdrawStuck() {
               <div>
                 <p className="text-gray-400 text-xs mb-1">Pair Address (TWAP)</p>
                 <a
-                  href={`https://testnet.bscscan.com/address/${currentPairAddress}`}
+                  href={`${BSCSCAN_BASE_URL}/address/${currentPairAddress}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-400 text-xs hover:underline break-all"
@@ -1877,7 +1877,7 @@ async function handleWithdrawStuck() {
               <div>
                 <p className="text-gray-400 text-xs mb-1">Price Feed (Chainlink)</p>
                 <a
-                  href={`https://testnet.bscscan.com/address/${currentPriceFeed}`}
+                  href={`${BSCSCAN_BASE_URL}/address/${currentPriceFeed}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-400 text-xs hover:underline break-all"

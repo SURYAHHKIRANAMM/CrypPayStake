@@ -8,7 +8,7 @@ import AdminPanel from "./pages/AdminPanel";
 import Loading from "./components/Loading";
 
 import { useWallet } from "./hooks/useWallet";
-import { ADMIN_WALLET, VIEWER_WALLET } from "./contract/config";
+import { ADMIN_WALLET, VIEWER_WALLETS } from "./contract/config";
 
 const SHOW_LEGACY_PANELS = import.meta.env.VITE_SHOW_LEGACY_PANELS === "true";
 
@@ -24,15 +24,23 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  const isAdmin = useMemo(() => {
+  // ✅ Full admin — can read + write (create plans, toggles, etc.)
+  const isFullAdmin = useMemo(() => {
     if (!account) return false;
-
     const addr = account.toLowerCase();
     const admin = ADMIN_WALLET?.toLowerCase?.() || "";
-    const viewer = VIEWER_WALLET?.toLowerCase?.() || "";
-
-    return (admin && addr === admin) || (viewer && addr === viewer);
+    return admin && addr === admin;
   }, [account]);
+
+  // ✅ Viewer admin — read-only (can see admin dashboard but cannot execute writes)
+  const isViewer = useMemo(() => {
+    if (!account) return false;
+    const addr = account.toLowerCase();
+    return VIEWER_WALLETS.includes(addr);
+  }, [account]);
+
+  // ✅ Combined check — either full admin or viewer gets admin panel access
+  const isAdmin = isFullAdmin || isViewer;
 
   if (loading) {
     return <Loading />;
@@ -60,6 +68,7 @@ export default function App() {
                     account={account}
                     signer={signer}
                     provider={provider}
+                    isViewer={isViewer}
                   />
                 ) : (
                   <UserPanel
@@ -80,6 +89,7 @@ export default function App() {
                     account={account}
                     signer={signer}
                     provider={provider}
+                    isViewer={isViewer}
                   />
                 ) : (
                   <UserPanel
@@ -116,6 +126,7 @@ export default function App() {
               account={account}
               signer={signer}
               provider={provider}
+              isViewer={isViewer}
             />
           )}
         </div>

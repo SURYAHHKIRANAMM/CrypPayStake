@@ -1,7 +1,7 @@
 import AdminGuard from "../components/AdminGuard";
 import AdminDashboard from "../components/AdminDashboard";
 
-export default function AdminPanel({ account, signer, provider }) {
+export default function AdminPanel({ account, signer, provider, isViewer }) {
 
   return (
     <AdminGuard account={account}>
@@ -9,6 +9,7 @@ export default function AdminPanel({ account, signer, provider }) {
         account={account}
         signer={signer}
         provider={provider}
+        isViewer={isViewer}
       />
     </AdminGuard>
   );

@@ -35,12 +35,12 @@ export default function Stake({
     return () => { mountedRef.current = false; };
   }, []);
 
-  // ✅ FIX: Retry-based plan loading — keeps trying until stakingReader is ready
+  // ✅ FIX: Fast retry plan loading — 500ms interval for quick response
   useEffect(() => {
-    if (plansLoadedRef.current) return;
+    plansLoadedRef.current = false;
 
     let attempts = 0;
-    const maxAttempts = 15; // try for up to 30 seconds
+    const maxAttempts = 20;
 
     const tryLoad = async () => {
       try {
@@ -56,20 +56,22 @@ export default function Stake({
       return false;
     };
 
-    // Try immediately
     tryLoad();
 
-    // Retry every 2 seconds until plans load or max attempts
     const interval = setInterval(async () => {
+      if (plansLoadedRef.current) {
+        clearInterval(interval);
+        return;
+      }
       attempts++;
       const success = await tryLoad();
       if (success || attempts >= maxAttempts) {
         clearInterval(interval);
       }
-    }, 2000);
+    }, 500);
 
     return () => clearInterval(interval);
-  }, [provider, signer]); // Re-run when provider/signer changes
+  }, [provider, signer]);
 
   const handleStake = async (planId, minTokenAmount) => {
     if (!account) {

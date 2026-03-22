@@ -449,7 +449,10 @@ export function useContract(signer, provider) {
 
   const fetchContractEvents = useCallback(
     async (userAddress) => {
-      if (!stakingReader || !readProvider || !userAddress) return [];
+      if (!stakingReader || !readProvider) return [];
+
+      // ✅ userAddress is optional — null/undefined = fetch ALL events (admin mode)
+      const filterAddress = userAddress || null;
 
       try {
         const latestBlock = await readProvider.getBlockNumber();
@@ -502,10 +505,10 @@ export function useContract(signer, provider) {
 
         const [stakedLogs, claimedLogs, withdrawnLogs, emergencyLogs] =
           await Promise.all([
-            collectLogs(stakingReader.filters.UserStaked(userAddress)),
-            collectLogs(stakingReader.filters.UserClaimed(userAddress)),
-            collectLogs(stakingReader.filters.UserWithdrawn(userAddress)),
-            collectLogs(stakingReader.filters.EmergencyWithdrawn(userAddress)),
+            collectLogs(stakingReader.filters.UserStaked(filterAddress)),
+            collectLogs(stakingReader.filters.UserClaimed(filterAddress)),
+            collectLogs(stakingReader.filters.UserWithdrawn(filterAddress)),
+            collectLogs(stakingReader.filters.EmergencyWithdrawn(filterAddress)),
           ]);
 
         const allEvents = [];
