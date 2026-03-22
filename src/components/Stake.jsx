@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import { useContract } from "../hooks/useContract";
 import { useBalance } from "../hooks/useBalance";
-import APRCalculator from "./APRCalculator";
+import { BSCSCAN_BASE_URL } from "../contract/config";
 
 export default function Stake({
   account,
@@ -23,31 +23,53 @@ export default function Stake({
   const [loading, setLoading] = useState(false);
   const [loadingPlanId, setLoadingPlanId] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [showCalculator, setShowCalculator] = useState(false);
+
+  // ✅ FIX: Store fetchPlans in ref so useEffect doesn't re-trigger on every render
+  const fnRef = useRef(fetchPlans);
+  fnRef.current = fetchPlans;
+  const mountedRef = useRef(true);
+  const plansLoadedRef = useRef(false);
 
   useEffect(() => {
-    let ignore = false;
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
-    async function loadPlans() {
+  // ✅ FIX: Retry-based plan loading — keeps trying until stakingReader is ready
+  useEffect(() => {
+    if (plansLoadedRef.current) return;
+
+    let attempts = 0;
+    const maxAttempts = 15; // try for up to 30 seconds
+
+    const tryLoad = async () => {
       try {
-        const data = await fetchPlans();
-        if (!ignore) {
-          setPlans(data || []);
+        const data = await fnRef.current();
+        if (mountedRef.current && data && data.length > 0) {
+          setPlans(data);
+          plansLoadedRef.current = true;
+          return true;
         }
       } catch (err) {
-        console.error("Plan load error:", err);
-        if (!ignore) {
-          setPlans([]);
-        }
+        console.error("Plan load attempt failed:", err);
       }
-    }
-
-    loadPlans();
-
-    return () => {
-      ignore = true;
+      return false;
     };
-  }, [provider, signer, fetchPlans]);
+
+    // Try immediately
+    tryLoad();
+
+    // Retry every 2 seconds until plans load or max attempts
+    const interval = setInterval(async () => {
+      attempts++;
+      const success = await tryLoad();
+      if (success || attempts >= maxAttempts) {
+        clearInterval(interval);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [provider, signer]); // Re-run when provider/signer changes
 
   const handleStake = async (planId, minTokenAmount) => {
     if (!account) {
@@ -56,7 +78,7 @@ export default function Stake({
     }
 
     if (!amount || Number(amount) <= 0) {
-      toast.error("Valid amount enter karo!");
+      toast.error("Enter a valid amount!");
       return;
     }
 
@@ -88,7 +110,7 @@ export default function Stake({
 
       toast.success(
         <a
-          href={"https://testnet.bscscan.com/tx/" + tx.hash}
+          href={`${BSCSCAN_BASE_URL}/tx/${tx.hash}`}
           target="_blank"
           rel="noopener noreferrer"
           className="underline text-blue-400"
@@ -129,7 +151,7 @@ export default function Stake({
           <div className="flex justify-between items-center mb-3">
             <span className="text-gray-400 text-sm">Wallet Balance</span>
             <span className="text-yellow-400 font-semibold text-sm">
-              {Number(balance).toLocaleString()} tCRP
+              {Number(balance).toLocaleString()} CrypPay (CRP)
             </span>
           </div>
         )}
@@ -156,19 +178,6 @@ export default function Stake({
             </button>
           )}
         </div>
-
-        <button
-          onClick={() => setShowCalculator(!showCalculator)}
-          className="mt-3 text-xs text-yellow-400 hover:underline"
-        >
-          🧮 {showCalculator ? "Hide" : "Show"} Calculator
-        </button>
-
-        {showCalculator && (
-          <div className="mt-4">
-            <APRCalculator />
-          </div>
-        )}
       </div>
 
       <div className="flex flex-wrap justify-center gap-6">

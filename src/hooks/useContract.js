@@ -453,7 +453,8 @@ export function useContract(signer, provider) {
 
       try {
         const latestBlock = await readProvider.getBlockNumber();
-        const chunkSize = 50000;
+        // ✅ BSC public RPC allows max ~5000 blocks per eth_getLogs query
+        const chunkSize = 5000;
         const blockCache = new Map();
 
         const getBlockTimestamp = async (blockNumber) => {
@@ -467,11 +468,15 @@ export function useContract(signer, provider) {
           return ts;
         };
 
+        // ✅ Look back ~7 days on BSC (1 block per 3s = ~200k blocks)
+        // Contract is new so this covers full history
+        const startBlock = Math.max(0, latestBlock - 200000);
+
         const collectLogs = async (filter) => {
           const logs = [];
 
           for (
-            let fromBlock = 0;
+            let fromBlock = startBlock;
             fromBlock <= latestBlock;
             fromBlock += chunkSize + 1
           ) {
@@ -513,7 +518,7 @@ export function useContract(signer, provider) {
             stakeIndex: null,
             planName: log.args?.planName ?? log.args?.[2] ?? "",
             amount: ethers.formatEther(log.args?.amount ?? log.args?.[3] ?? 0),
-            txHash: log.transactionHash,
+            txHash: log.transactionHash || log.hash || log.log?.transactionHash || "",
             blockNumber: Number(log.blockNumber),
             logIndex: Number(log.index ?? log.logIndex ?? 0),
             timestamp: await getBlockTimestamp(Number(log.blockNumber)),
@@ -528,7 +533,7 @@ export function useContract(signer, provider) {
             stakeIndex: Number(log.args?.stakeIndex ?? log.args?.[1] ?? 0),
             planName: "",
             amount: ethers.formatEther(log.args?.amount ?? log.args?.[2] ?? 0),
-            txHash: log.transactionHash,
+            txHash: log.transactionHash || log.hash || log.log?.transactionHash || "",
             blockNumber: Number(log.blockNumber),
             logIndex: Number(log.index ?? log.logIndex ?? 0),
             timestamp: await getBlockTimestamp(Number(log.blockNumber)),
@@ -545,7 +550,7 @@ export function useContract(signer, provider) {
             amount: ethers.formatEther(
               log.args?.principalReleased ?? log.args?.[2] ?? 0
             ),
-            txHash: log.transactionHash,
+            txHash: log.transactionHash || log.hash || log.log?.transactionHash || "",
             blockNumber: Number(log.blockNumber),
             logIndex: Number(log.index ?? log.logIndex ?? 0),
             timestamp: await getBlockTimestamp(Number(log.blockNumber)),
@@ -560,7 +565,7 @@ export function useContract(signer, provider) {
             stakeIndex: null,
             planName: "",
             amount: ethers.formatEther(log.args?.amount ?? log.args?.[2] ?? 0),
-            txHash: log.transactionHash,
+            txHash: log.transactionHash || log.hash || log.log?.transactionHash || "",
             blockNumber: Number(log.blockNumber),
             logIndex: Number(log.index ?? log.logIndex ?? 0),
             timestamp: await getBlockTimestamp(Number(log.blockNumber)),
