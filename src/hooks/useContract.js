@@ -22,6 +22,18 @@ function scaleTo1e18(amount, decimals) {
   return value / 10n ** BigInt(decimals - 18);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function toNumber(value) {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return value;
+  const str = String(value);
+  if (!str) return 0;
+  return str.startsWith("0x") ? parseInt(str, 16) : Number(str);
+}
+
 export function useContract(signer, provider) {
   const readProvider = useMemo(() => {
     if (provider) return provider;
@@ -453,21 +465,229 @@ export function useContract(signer, provider) {
     async (userAddress) => {
       if (!stakingReader || !readProvider) return [];
 
-      const filterAddress = userAddress || null;
+      const filterAddress =
+        userAddress && ethers.isAddress(userAddress) ? userAddress : null;
+
+      const iface = new ethers.Interface([
+        "event UserStaked(address indexed user, uint256 indexed planId, string planName, uint256 amount, uint256 unlockTime)",
+        "event UserClaimed(address indexed user, uint256 indexed stakeIndex, uint256 amount, uint256 totalClaimed, uint256 remaining)",
+        "event UserWithdrawn(address indexed user, uint256 indexed planId, uint256 principalReleased, uint256 totalClaimed, uint256 unlockTime)",
+        "event EmergencyWithdrawn(address indexed user, uint256 indexed planId, uint256 amount, uint256 penalty)",
+      ]);
+
+      const eventMeta = [
+        {
+          name: "UserStaked",
+          type: "Stake",
+        },
+        {
+          name: "UserClaimed",
+          type: "Claim",
+        },
+        {
+          name: "UserWithdrawn",
+          type: "Withdraw",
+        },
+        {
+          name: "EmergencyWithdrawn",
+          type: "Emergency",
+        },
+      ];
+
+      const getApiBase = () => {
+        const rpc = String(RPC_URL || "").toLowerCase();
+        if (
+          rpc.includes("testnet") ||
+          rpc.includes("prebsc") ||
+          rpc.includes("chapel")
+        ) {
+          return "https://api-testnet.bscscan.com/api";
+        }
+        return "https://api.bscscan.com/api";
+      };
+
+      const parseEventFromLog = async (log, parsedName) => {
+        try {
+          const parsed = iface.parseLog({
+            topics: log.topics,
+            data: log.data,
+          });
+
+          if (!parsed) return null;
+
+          const blockNumber = toNumber(log.blockNumber);
+          const timestamp =
+            toNumber(log.timeStamp) ||
+            toNumber(log.timestamp) ||
+            0;
+
+          if (parsedName === "UserStaked") {
+            return {
+              type: "Stake",
+              user: parsed.args?.user ?? parsed.args?.[0] ?? "",
+              planId: Number(parsed.args?.planId ?? parsed.args?.[1] ?? 0),
+              stakeIndex: null,
+              planName: parsed.args?.planName ?? parsed.args?.[2] ?? "",
+              amount: ethers.formatEther(
+                parsed.args?.amount ?? parsed.args?.[3] ?? 0
+              ),
+              txHash: log.transactionHash || "",
+              blockNumber,
+              logIndex: toNumber(log.logIndex),
+              timestamp,
+            };
+          }
+
+          if (parsedName === "UserClaimed") {
+            return {
+              type: "Claim",
+              user: parsed.args?.user ?? parsed.args?.[0] ?? "",
+              planId: null,
+              stakeIndex: Number(
+                parsed.args?.stakeIndex ?? parsed.args?.[1] ?? 0
+              ),
+              planName: "",
+              amount: ethers.formatEther(
+                parsed.args?.amount ?? parsed.args?.[2] ?? 0
+              ),
+              txHash: log.transactionHash || "",
+              blockNumber,
+              logIndex: toNumber(log.logIndex),
+              timestamp,
+            };
+          }
+
+          if (parsedName === "UserWithdrawn") {
+            return {
+              type: "Withdraw",
+              user: parsed.args?.user ?? parsed.args?.[0] ?? "",
+              planId: Number(parsed.args?.planId ?? parsed.args?.[1] ?? 0),
+              stakeIndex: null,
+              planName: "",
+              amount: ethers.formatEther(
+                parsed.args?.principalReleased ?? parsed.args?.[2] ?? 0
+              ),
+              txHash: log.transactionHash || "",
+              blockNumber,
+              logIndex: toNumber(log.logIndex),
+              timestamp,
+            };
+          }
+
+          if (parsedName === "EmergencyWithdrawn") {
+            return {
+              type: "Emergency",
+              user: parsed.args?.user ?? parsed.args?.[0] ?? "",
+              planId: Number(parsed.args?.planId ?? parsed.args?.[1] ?? 0),
+              stakeIndex: null,
+              planName: "",
+              amount: ethers.formatEther(
+                parsed.args?.amount ?? parsed.args?.[2] ?? 0
+              ),
+              txHash: log.transactionHash || "",
+              blockNumber,
+              logIndex: toNumber(log.logIndex),
+              timestamp,
+            };
+          }
+
+          return null;
+        } catch {
+          return null;
+        }
+      };
 
       try {
         const latestBlock = await readProvider.getBlockNumber();
-        // ✅ FIX: Use 5000 chunk (BSC max) and limit lookback to reduce total calls
+
         const chunkSize = Math.min(
           Math.max(Number(EVENTS_CHUNK_SIZE) || 5000, 1000),
           5000
         );
+
         const lookbackBlocks = Math.min(
-          Math.max(Number(EVENTS_LOOKBACK_BLOCKS) || 200000, chunkSize),
+          Math.max(Number(EVENTS_LOOKBACK_BLOCKS) || 180000, chunkSize),
           500000
         );
 
         const startBlock = Math.max(0, latestBlock - lookbackBlocks);
+        const apiBase = getApiBase();
+        const apiKey = import.meta.env.VITE_BSCSCAN_API_KEY || "";
+        const userTopic = filterAddress
+          ? ethers.zeroPadValue(filterAddress, 32).toLowerCase()
+          : null;
+
+        const allEvents = [];
+
+        for (const meta of eventMeta) {
+          const eventFragment = iface.getEvent(meta.name);
+          const topic0 = eventFragment.topicHash;
+
+          for (
+            let fromBlock = startBlock;
+            fromBlock <= latestBlock;
+            fromBlock += chunkSize + 1
+          ) {
+            const toBlock = Math.min(fromBlock + chunkSize, latestBlock);
+
+            try {
+              const params = new URLSearchParams({
+                module: "logs",
+                action: "getLogs",
+                fromBlock: String(fromBlock),
+                toBlock: String(toBlock),
+                address: CONTRACT_ADDRESS,
+                topic0,
+              });
+
+              if (userTopic) {
+                params.set("topic0_1_opr", "and");
+                params.set("topic1", userTopic);
+              }
+
+              if (apiKey) {
+                params.set("apikey", apiKey);
+              }
+
+              const res = await fetch(`${apiBase}?${params.toString()}`);
+              const data = await res.json();
+
+              const logs =
+                Array.isArray(data?.result) ? data.result : [];
+
+              for (const log of logs) {
+                const parsedEvent = await parseEventFromLog(log, meta.name);
+                if (parsedEvent) {
+                  allEvents.push(parsedEvent);
+                }
+              }
+            } catch (apiErr) {
+              console.error(
+                `BscScan logs fetch failed for ${meta.name} ${fromBlock}-${toBlock}:`,
+                apiErr
+              );
+            }
+
+            if (fromBlock + chunkSize < latestBlock) {
+              await sleep(180);
+            }
+          }
+
+          await sleep(250);
+        }
+
+        if (allEvents.length > 0) {
+          allEvents.sort((a, b) => {
+            if (b.blockNumber !== a.blockNumber) {
+              return b.blockNumber - a.blockNumber;
+            }
+            return b.logIndex - a.logIndex;
+          });
+
+          return allEvents;
+        }
+
+        // ─── Fallback: on-chain queryFilter ─────────────────────────────
         const blockCache = new Map();
 
         const getBlockTimestamp = async (blockNumber) => {
@@ -509,35 +729,45 @@ export function useContract(signer, provider) {
               );
             }
 
-            // ✅ FIX: Small delay between chunks to avoid BSC rate limit
             if (fromBlock + chunkSize < latestBlock) {
-              await new Promise((r) => setTimeout(r, 200));
+              await sleep(180);
             }
           }
 
           return logs;
         };
 
-        // ✅ FIX: SEQUENTIAL queries — one event type at a time to avoid rate limits
-        // Promise.all with 4 types × 100+ chunks = 400+ parallel calls = rate limited
-        const stakedLogs = await collectLogs(stakingReader.filters.UserStaked(filterAddress));
-        await new Promise((r) => setTimeout(r, 300));
-        const claimedLogs = await collectLogs(stakingReader.filters.UserClaimed(filterAddress));
-        await new Promise((r) => setTimeout(r, 300));
-        const withdrawnLogs = await collectLogs(stakingReader.filters.UserWithdrawn(filterAddress));
-        await new Promise((r) => setTimeout(r, 300));
-        const emergencyLogs = await collectLogs(stakingReader.filters.EmergencyWithdrawn(filterAddress));
+        const stakedLogs = await collectLogs(
+          stakingReader.filters.UserStaked(filterAddress)
+        );
+        await sleep(250);
 
-        const allEvents = [];
+        const claimedLogs = await collectLogs(
+          stakingReader.filters.UserClaimed(filterAddress)
+        );
+        await sleep(250);
+
+        const withdrawnLogs = await collectLogs(
+          stakingReader.filters.UserWithdrawn(filterAddress)
+        );
+        await sleep(250);
+
+        const emergencyLogs = await collectLogs(
+          stakingReader.filters.EmergencyWithdrawn(filterAddress)
+        );
+
+        const fallbackEvents = [];
 
         for (const log of stakedLogs) {
-          allEvents.push({
+          fallbackEvents.push({
             type: "Stake",
             user: log.args?.user ?? log.args?.[0] ?? "",
             planId: Number(log.args?.planId ?? log.args?.[1] ?? 0),
             stakeIndex: null,
             planName: log.args?.planName ?? log.args?.[2] ?? "",
-            amount: ethers.formatEther(log.args?.amount ?? log.args?.[3] ?? 0),
+            amount: ethers.formatEther(
+              log.args?.amount ?? log.args?.[3] ?? 0
+            ),
             txHash:
               log.transactionHash ||
               log.hash ||
@@ -550,13 +780,15 @@ export function useContract(signer, provider) {
         }
 
         for (const log of claimedLogs) {
-          allEvents.push({
+          fallbackEvents.push({
             type: "Claim",
             user: log.args?.user ?? log.args?.[0] ?? "",
             planId: null,
             stakeIndex: Number(log.args?.stakeIndex ?? log.args?.[1] ?? 0),
             planName: "",
-            amount: ethers.formatEther(log.args?.amount ?? log.args?.[2] ?? 0),
+            amount: ethers.formatEther(
+              log.args?.amount ?? log.args?.[2] ?? 0
+            ),
             txHash:
               log.transactionHash ||
               log.hash ||
@@ -569,7 +801,7 @@ export function useContract(signer, provider) {
         }
 
         for (const log of withdrawnLogs) {
-          allEvents.push({
+          fallbackEvents.push({
             type: "Withdraw",
             user: log.args?.user ?? log.args?.[0] ?? "",
             planId: Number(log.args?.planId ?? log.args?.[1] ?? 0),
@@ -590,13 +822,15 @@ export function useContract(signer, provider) {
         }
 
         for (const log of emergencyLogs) {
-          allEvents.push({
+          fallbackEvents.push({
             type: "Emergency",
             user: log.args?.user ?? log.args?.[0] ?? "",
             planId: Number(log.args?.planId ?? log.args?.[1] ?? 0),
             stakeIndex: null,
             planName: "",
-            amount: ethers.formatEther(log.args?.amount ?? log.args?.[2] ?? 0),
+            amount: ethers.formatEther(
+              log.args?.amount ?? log.args?.[2] ?? 0
+            ),
             txHash:
               log.transactionHash ||
               log.hash ||
@@ -608,14 +842,14 @@ export function useContract(signer, provider) {
           });
         }
 
-        allEvents.sort((a, b) => {
+        fallbackEvents.sort((a, b) => {
           if (b.blockNumber !== a.blockNumber) {
             return b.blockNumber - a.blockNumber;
           }
           return b.logIndex - a.logIndex;
         });
 
-        return allEvents;
+        return fallbackEvents;
       } catch (err) {
         console.error("fetchContractEvents error:", err);
         return [];

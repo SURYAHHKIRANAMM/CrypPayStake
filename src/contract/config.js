@@ -24,11 +24,11 @@ Event Fetch Tuning (Mainnet Safe)
 -----------------------------------
 */
 export const EVENTS_LOOKBACK_BLOCKS = Number(
-  import.meta.env.VITE_EVENTS_LOOKBACK_BLOCKS || 500000
+  import.meta.env.VITE_EVENTS_LOOKBACK_BLOCKS || 120000
 );
 
 export const EVENTS_CHUNK_SIZE = Number(
-  import.meta.env.VITE_EVENTS_CHUNK_SIZE || 4000
+  import.meta.env.VITE_EVENTS_CHUNK_SIZE || 3000
 );
 
 /*

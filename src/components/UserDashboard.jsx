@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { ethers } from "ethers";
 import toast from "react-hot-toast";
 import { useContract } from "../hooks/useContract";
@@ -36,13 +36,13 @@ export default function UserDashboard({ account, signer, provider }) {
   const [, setLoading] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(null);
   const [activeSection, setActiveSection] = useState("active");
+  const [historyFilter, setHistoryFilter] = useState("All");
   const [tokenPrice, setTokenPrice] = useState("0");
   const [, setTotalDistributed] = useState("0");
   const [userStakeCount, setUserStakeCount] = useState("0");
   const [emergencyMode, setEmergencyMode] = useState(false);
   const [planEmergencyStatusMap, setPlanEmergencyStatusMap] = useState({});
   const [, setHasStakedBefore] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [dataReady, setDataReady] = useState(false);
 
   const mountedRef = useRef(true);
@@ -69,6 +69,10 @@ export default function UserDashboard({ account, signer, provider }) {
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    setHistoryFilter("All");
+  }, [account]);
 
   const fmtDate = useCallback((ts) => {
     if (!ts || Number(ts) <= 0) return "—";
@@ -179,167 +183,170 @@ export default function UserDashboard({ account, signer, provider }) {
       setUserStakeCount(stakeCount || "0");
       setEmergencyMode(!!isEmergency);
       setHasStakedBefore(!!stakedBefore);
+
+      // Open dashboard immediately after primary data loads
       setDataReady(true);
 
-      const rewards = await Promise.all(
-        stakeData.map((_, i) => fn.fetchClaimable(targetAccount, i))
-      );
-
-      if (loadIdRef.current === thisLoadId && mountedRef.current) {
-        setClaimables(rewards || []);
-      }
-
-      const emergencyStatuses = {};
-      await Promise.all(
-        planData.map(async (_, i) => {
-          try {
-            emergencyStatuses[i] = await fn.fetchPlanEmergency(i);
-          } catch {
-            emergencyStatuses[i] = false;
-          }
-        })
-      );
-
-      if (loadIdRef.current === thisLoadId && mountedRef.current) {
-        setPlanEmergencyStatusMap(emergencyStatuses);
-      }
-
-      try {
-        let rawEvents = await fn.fetchContractEvents(targetAccount);
-
-        if (loadIdRef.current !== thisLoadId || !mountedRef.current) return;
-
-        // ✅ FIX: Check if any event has real txHash
-        const hasRealTxHash = Array.isArray(rawEvents) && rawEvents.length > 0 &&
-          rawEvents.some(e => e?.txHash || e?.transactionHash || e?.hash);
-
-        // ✅ If user-filtered query returned no txHash, fetch ALL events and filter client-side
-        if (!hasRealTxHash) {
-          try {
-            const allRawEvents = await fn.fetchContractEvents(null);
-            if (loadIdRef.current !== thisLoadId || !mountedRef.current) return;
-
-            if (Array.isArray(allRawEvents) && allRawEvents.length > 0) {
-              const userFiltered = allRawEvents.filter(
-                (e) => e?.user && e.user.toLowerCase() === targetAccount.toLowerCase()
-              );
-              if (userFiltered.length > 0) {
-                rawEvents = userFiltered;
-              }
-            }
-          } catch (allEventsErr) {
-            console.error("All events fallback error:", allEventsErr);
-          }
-        }
-
-        const normalizedEvents = (Array.isArray(rawEvents) ? rawEvents : [])
-          .map((event, index) => {
-            const resolvedPlanId =
-              event?.planId !== null &&
-              event?.planId !== undefined &&
-              event?.planId !== ""
-                ? Number(event.planId)
-                : null;
-
-            const resolvedPlanName =
-              event?.planName ||
-              (resolvedPlanId !== null && planData?.[resolvedPlanId]?.name) ||
-              (resolvedPlanId !== null ? `Plan #${resolvedPlanId}` : "-");
-
-            return {
-              type: event?.type || "Stake",
-              user: event?.user || targetAccount,
-              planId: resolvedPlanId,
-              stakeIndex:
-                event?.stakeIndex !== null &&
-                event?.stakeIndex !== undefined &&
-                event?.stakeIndex !== ""
-                  ? Number(event.stakeIndex)
-                  : null,
-              planName: resolvedPlanName,
-              amount: event?.amount ?? "0",
-              txHash:
-                event?.txHash ||
-                event?.transactionHash ||
-                event?.hash ||
-                "",
-              blockNumber: Number(event?.blockNumber || 0),
-              logIndex: Number(event?.logIndex || index),
-              timestamp: Number(event?.timestamp || 0),
-            };
-          })
-          .filter((event) => {
-            const sameUser =
-              !event.user ||
-              event.user.toLowerCase() === targetAccount.toLowerCase();
-
-            return (
-              sameUser &&
-              event.type &&
-              (event.txHash || event.blockNumber > 0 || event.timestamp > 0)
-            );
-          })
-          .sort((a, b) => {
-            if (b.blockNumber !== a.blockNumber) {
-              return b.blockNumber - a.blockNumber;
-            }
-            return b.logIndex - a.logIndex;
-          });
-
-        if (normalizedEvents.length > 0) {
-          setHistoryEvents(normalizedEvents);
-        } else if (stakeData.length > 0) {
-          const fallbackHistory = stakeData.map((stake, i) => {
-            const planId = Number(stake.planId);
-            const plan = planData?.[planId];
-
-            return {
-              type: "Stake",
-              user: targetAccount,
-              planId,
-              stakeIndex: i,
-              planName: plan ? plan.name : `Plan #${planId}`,
-              amount: ethers.formatUnits(stake.amount || 0, 18),
-              txHash: "",
-              blockNumber: 0,
-              logIndex: i,
-              timestamp: Number(stake.startTime || 0),
-            };
-          });
-
-          setHistoryEvents(fallbackHistory);
-        } else {
-          setHistoryEvents([]);
-        }
-      } catch (historyErr) {
-        console.error("History load error:", historyErr);
-
-        if (stakeData.length > 0) {
-          const fallbackHistory = stakeData.map((stake, i) => {
-            const planId = Number(stake.planId);
-            const plan = planData?.[planId];
-
-            return {
-              type: "Stake",
-              user: targetAccount,
-              planId,
-              stakeIndex: i,
-              planName: plan ? plan.name : `Plan #${planId}`,
-              amount: ethers.formatUnits(stake.amount || 0, 18),
-              txHash: "",
-              blockNumber: 0,
-              logIndex: i,
-              timestamp: Number(stake.startTime || 0),
-            };
-          });
+      // Load claimables in background
+      (async () => {
+        try {
+          const rewards = await Promise.all(
+            stakeData.map((_, i) => fn.fetchClaimable(targetAccount, i))
+          );
 
           if (loadIdRef.current === thisLoadId && mountedRef.current) {
-            setHistoryEvents(fallbackHistory);
+            setClaimables(rewards || []);
           }
-        } else if (loadIdRef.current === thisLoadId && mountedRef.current) {
-          setHistoryEvents([]);
+        } catch (err) {
+          console.error("Claimable load error:", err);
+          if (loadIdRef.current === thisLoadId && mountedRef.current) {
+            setClaimables([]);
+          }
         }
-      }
+      })();
+
+      // Load plan emergency statuses in background
+      (async () => {
+        try {
+          const emergencyStatuses = {};
+          await Promise.all(
+            planData.map(async (_, i) => {
+              try {
+                emergencyStatuses[i] = await fn.fetchPlanEmergency(i);
+              } catch {
+                emergencyStatuses[i] = false;
+              }
+            })
+          );
+
+          if (loadIdRef.current === thisLoadId && mountedRef.current) {
+            setPlanEmergencyStatusMap(emergencyStatuses);
+          }
+        } catch (err) {
+          console.error("Plan emergency status load error:", err);
+          if (loadIdRef.current === thisLoadId && mountedRef.current) {
+            setPlanEmergencyStatusMap({});
+          }
+        }
+      })();
+
+      // Load history in background
+      (async () => {
+        try {
+          const rawEvents = await fn.fetchContractEvents(targetAccount);
+
+          if (loadIdRef.current !== thisLoadId || !mountedRef.current) return;
+
+          const normalizedEvents = (Array.isArray(rawEvents) ? rawEvents : [])
+            .map((event, index) => {
+              const resolvedPlanId =
+                event?.planId !== null &&
+                event?.planId !== undefined &&
+                event?.planId !== ""
+                  ? Number(event.planId)
+                  : null;
+
+              const resolvedPlanName =
+                event?.planName ||
+                (resolvedPlanId !== null && planData?.[resolvedPlanId]?.name) ||
+                (resolvedPlanId !== null ? `Plan #${resolvedPlanId}` : "-");
+
+              return {
+                type: event?.type || "Stake",
+                user: event?.user || targetAccount,
+                planId: resolvedPlanId,
+                stakeIndex:
+                  event?.stakeIndex !== null &&
+                  event?.stakeIndex !== undefined &&
+                  event?.stakeIndex !== ""
+                    ? Number(event.stakeIndex)
+                    : null,
+                planName: resolvedPlanName,
+                amount: event?.amount ?? "0",
+                txHash:
+                  event?.txHash ||
+                  event?.transactionHash ||
+                  event?.hash ||
+                  "",
+                blockNumber: Number(event?.blockNumber || 0),
+                logIndex: Number(event?.logIndex || index),
+                timestamp: Number(event?.timestamp || 0),
+              };
+            })
+            .filter((event) => {
+              const sameUser =
+                !event.user ||
+                String(event.user).toLowerCase() ===
+                  String(targetAccount).toLowerCase();
+
+              return (
+                sameUser &&
+                event.type &&
+                (event.txHash || event.blockNumber > 0 || event.timestamp > 0)
+              );
+            })
+            .sort((a, b) => {
+              if (b.blockNumber !== a.blockNumber) {
+                return b.blockNumber - a.blockNumber;
+              }
+              return b.logIndex - a.logIndex;
+            });
+
+          if (normalizedEvents.length > 0) {
+            setHistoryEvents(normalizedEvents);
+          } else if (stakeData.length > 0) {
+            const fallbackHistory = stakeData.map((stake, i) => {
+              const planId = Number(stake.planId);
+              const plan = planData?.[planId];
+
+              return {
+                type: "Stake",
+                user: targetAccount,
+                planId,
+                stakeIndex: i,
+                planName: plan ? plan.name : `Plan #${planId}`,
+                amount: ethers.formatUnits(stake.amount || 0, 18),
+                txHash: "",
+                blockNumber: 0,
+                logIndex: i,
+                timestamp: Number(stake.startTime || 0),
+              };
+            });
+
+            setHistoryEvents(fallbackHistory);
+          } else {
+            setHistoryEvents([]);
+          }
+        } catch (historyErr) {
+          console.error("History load error:", historyErr);
+
+          if (stakeData.length > 0) {
+            const fallbackHistory = stakeData.map((stake, i) => {
+              const planId = Number(stake.planId);
+              const plan = planData?.[planId];
+
+              return {
+                type: "Stake",
+                user: targetAccount,
+                planId,
+                stakeIndex: i,
+                planName: plan ? plan.name : `Plan #${planId}`,
+                amount: ethers.formatUnits(stake.amount || 0, 18),
+                txHash: "",
+                blockNumber: 0,
+                logIndex: i,
+                timestamp: Number(stake.startTime || 0),
+              };
+            });
+
+            if (loadIdRef.current === thisLoadId && mountedRef.current) {
+              setHistoryEvents(fallbackHistory);
+            }
+          } else if (loadIdRef.current === thisLoadId && mountedRef.current) {
+            setHistoryEvents([]);
+          }
+        }
+      })();
     } catch (err) {
       console.error("Dashboard load error:", err);
 
@@ -457,7 +464,7 @@ export default function UserDashboard({ account, signer, provider }) {
   const handleEmergency = (index) => {
     if (
       !window.confirm(
-        "Are you sure you want to emergency withdraw? Claimed amount will be adjusted from remaining balance."
+        "Are you sure you want to perform an emergency withdrawal? The claimed amount will be adjusted from the remaining balance."
       )
     ) {
       return;
@@ -466,23 +473,10 @@ export default function UserDashboard({ account, signer, provider }) {
     runTx(
       () => emergencyWithdrawTokens(index),
       index,
-      "Emergency Withdrawing...",
-      "Emergency withdraw failed ❌"
+      "Processing emergency withdrawal...",
+      "Emergency withdrawal failed ❌"
     );
   };
-
-  const handleRefresh = useCallback(async () => {
-    if (!account) return;
-
-    setRefreshing(true);
-    try {
-      await doLoad(account);
-    } finally {
-      if (mountedRef.current) {
-        setRefreshing(false);
-      }
-    }
-  }, [account, doLoad]);
 
   const totalUserStaked = stakes.reduce(
     (sum, s) => sum + Number(ethers.formatUnits(s.amount || 0, 18)),
@@ -524,6 +518,11 @@ export default function UserDashboard({ account, signer, provider }) {
     return acc;
   }, {});
 
+  const filteredHistoryEvents = useMemo(() => {
+    if (historyFilter === "All") return historyEvents;
+    return historyEvents.filter((event) => event.type === historyFilter);
+  }, [historyEvents, historyFilter]);
+
   if (!account) {
     return (
       <div className="text-center mt-20 text-yellow-400 text-lg">
@@ -545,13 +544,6 @@ export default function UserDashboard({ account, signer, provider }) {
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-yellow-400">📊 Dashboard</h1>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="text-sm bg-gray-700 hover:bg-gray-600 disabled:opacity-50 px-4 py-2 rounded transition"
-        >
-          {refreshing ? "⏳ Loading..." : "🔄 Refresh"}
-        </button>
       </div>
 
       {/* PORTFOLIO SUMMARY */}
@@ -687,12 +679,14 @@ export default function UserDashboard({ account, signer, provider }) {
             Active:{" "}
             <span className="text-white font-bold">{trueActive.length}</span>
           </span>
+
           <span className="text-gray-400">
             Claimed/Withdraw:{" "}
             <span className="text-yellow-400 font-bold">
               {completedStakes.length}
             </span>
           </span>
+
           <span className="text-gray-400">
             Remaining:{" "}
             <span className="text-blue-400 font-bold">
@@ -791,8 +785,7 @@ export default function UserDashboard({ account, signer, provider }) {
                 const progressPercent =
                   stakedAmt > 0 ? (claimedAmt / stakedAmt) * 100 : 0;
                 const canEmergencyWithdraw =
-                  emergencyMode ||
-                  planEmergencyStatusMap?.[stake.planId] === true;
+                  emergencyMode || planEmergencyStatusMap?.[planId] === true;
 
                 return (
                   <div
@@ -1222,32 +1215,67 @@ export default function UserDashboard({ account, signer, provider }) {
         <>
           {historyEvents.length > 0 && (
             <div className="flex gap-3 mb-4 flex-wrap">
-              <span className="text-xs px-3 py-1.5 rounded-full bg-gray-800 text-gray-300 border border-gray-700 font-semibold">
+              <button
+                onClick={() => setHistoryFilter("All")}
+                className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition ${
+                  historyFilter === "All"
+                    ? "bg-yellow-500 text-black border-yellow-500"
+                    : "bg-gray-800 text-gray-300 border-gray-700 hover:text-yellow-400"
+                }`}
+              >
                 All: {historyEvents.length}
-              </span>
+              </button>
 
               {historyTypeCounts["Stake"] > 0 && (
-                <span className="text-xs px-3 py-1.5 rounded-full bg-blue-900/50 text-blue-400 border border-blue-500/30 font-semibold">
+                <button
+                  onClick={() => setHistoryFilter("Stake")}
+                  className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition ${
+                    historyFilter === "Stake"
+                      ? "bg-blue-500 text-white border-blue-500"
+                      : "bg-blue-900/50 text-blue-400 border-blue-500/30"
+                  }`}
+                >
                   Stake: {historyTypeCounts["Stake"]}
-                </span>
+                </button>
               )}
 
               {historyTypeCounts["Claim"] > 0 && (
-                <span className="text-xs px-3 py-1.5 rounded-full bg-green-900/50 text-green-400 border border-green-500/30 font-semibold">
+                <button
+                  onClick={() => setHistoryFilter("Claim")}
+                  className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition ${
+                    historyFilter === "Claim"
+                      ? "bg-green-500 text-white border-green-500"
+                      : "bg-green-900/50 text-green-400 border-green-500/30"
+                  }`}
+                >
                   Claim: {historyTypeCounts["Claim"]}
-                </span>
+                </button>
               )}
 
               {historyTypeCounts["Withdraw"] > 0 && (
-                <span className="text-xs px-3 py-1.5 rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-500/30 font-semibold">
+                <button
+                  onClick={() => setHistoryFilter("Withdraw")}
+                  className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition ${
+                    historyFilter === "Withdraw"
+                      ? "bg-yellow-500 text-black border-yellow-500"
+                      : "bg-yellow-900/50 text-yellow-400 border-yellow-500/30"
+                  }`}
+                >
                   Withdraw: {historyTypeCounts["Withdraw"]}
-                </span>
+                </button>
               )}
 
               {historyTypeCounts["Emergency"] > 0 && (
-                <span className="text-xs px-3 py-1.5 rounded-full bg-red-900/50 text-red-400 border border-red-500/30 font-semibold">
+                <button
+                  onClick={() => setHistoryFilter("Emergency")}
+                  className={`text-xs px-3 py-1.5 rounded-full border font-semibold transition ${
+                    historyFilter === "Emergency"
+                      ? "bg-red-500 text-white border-red-500"
+                      : "bg-red-900/50 text-red-400 border-red-500/30"
+                  }`}
+                >
                   Emergency: {historyTypeCounts["Emergency"]}
-                </span>
+                </button>
               )}
             </div>
           )}
@@ -1257,7 +1285,15 @@ export default function UserDashboard({ account, signer, provider }) {
               <p className="text-5xl mb-4">📋</p>
               <p className="text-lg">No transaction records found</p>
               <p className="text-sm mt-2">
-                Your stake, claim and withdraw records will appear here
+                Your staking, claim, and withdrawal records will appear here
+              </p>
+            </div>
+          ) : filteredHistoryEvents.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <p className="text-5xl mb-4">🗂️</p>
+              <p className="text-lg">No records available for this filter</p>
+              <p className="text-sm mt-2">
+                Please select another history filter to continue
               </p>
             </div>
           ) : (
@@ -1274,12 +1310,11 @@ export default function UserDashboard({ account, signer, provider }) {
                 <span className="text-right">BscScan</span>
               </div>
 
-              {historyEvents.map((event, i) => {
+              {filteredHistoryEvents.map((event, i) => {
                 const txHash =
                   typeof event.txHash === "string" ? event.txHash.trim() : "";
 
-                const validTxHash =
-                  /^0x([A-Fa-f0-9]{64})$/.test(txHash);
+                const validTxHash = /^0x([A-Fa-f0-9]{64})$/.test(txHash);
 
                 return (
                   <div
@@ -1359,7 +1394,7 @@ export default function UserDashboard({ account, signer, provider }) {
               >
                 <span className="text-gray-400">Total</span>
                 <span className="text-gray-400">
-                  {historyEvents.length} events
+                  {filteredHistoryEvents.length} events
                 </span>
                 <span></span>
                 <span></span>
