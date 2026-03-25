@@ -40,10 +40,14 @@ export const ADMIN_WALLET =
 export const VIEWER_WALLET =
   import.meta.env.VITE_VIEWER_WALLET ||
   "0xec23685c637C28dD17dC07E600575A1141E250c0";
- 
+
+export const VIEWER_WALLET_2 =
+  import.meta.env.VITE_VIEWER_WALLET_2 ||
+  "0x32385Efba0e1C2c589a90603cF3a9d4B28fD12E4";
+
 export const VIEWER_WALLETS = [
   VIEWER_WALLET,
-  "0x32385Efba0e1C2c589a90603cF3a9d4B28fD12E4",
+  VIEWER_WALLET_2,
 ].map((addr) => addr.toLowerCase());
 
 /*
