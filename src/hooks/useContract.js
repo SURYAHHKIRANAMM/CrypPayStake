@@ -9,6 +9,8 @@ import {
   ORACLE_ABI,
   ERC20_METADATA_ABI,
   RPC_URL,
+  EVENTS_LOOKBACK_BLOCKS,
+  EVENTS_CHUNK_SIZE,
 } from "../contract/config";
 
 function scaleTo1e18(amount, decimals) {
@@ -451,13 +453,21 @@ export function useContract(signer, provider) {
     async (userAddress) => {
       if (!stakingReader || !readProvider) return [];
 
-      // ✅ userAddress is optional — null/undefined = fetch ALL events (admin mode)
       const filterAddress = userAddress || null;
 
       try {
         const latestBlock = await readProvider.getBlockNumber();
-        // ✅ BSC public RPC allows max ~5000 blocks per eth_getLogs query
-        const chunkSize = 5000;
+        // ✅ FIX: Use 5000 chunk (BSC max) and limit lookback to reduce total calls
+        const chunkSize = Math.min(
+          Math.max(Number(EVENTS_CHUNK_SIZE) || 5000, 1000),
+          5000
+        );
+        const lookbackBlocks = Math.min(
+          Math.max(Number(EVENTS_LOOKBACK_BLOCKS) || 200000, chunkSize),
+          500000
+        );
+
+        const startBlock = Math.max(0, latestBlock - lookbackBlocks);
         const blockCache = new Map();
 
         const getBlockTimestamp = async (blockNumber) => {
@@ -465,15 +475,15 @@ export function useContract(signer, provider) {
             return blockCache.get(blockNumber);
           }
 
-          const block = await readProvider.getBlock(blockNumber);
-          const ts = block?.timestamp ? Number(block.timestamp) : 0;
-          blockCache.set(blockNumber, ts);
-          return ts;
+          try {
+            const block = await readProvider.getBlock(blockNumber);
+            const ts = block?.timestamp ? Number(block.timestamp) : 0;
+            blockCache.set(blockNumber, ts);
+            return ts;
+          } catch {
+            return 0;
+          }
         };
-
-        // ✅ Look back ~7 days on BSC (1 block per 3s = ~200k blocks)
-        // Contract is new so this covers full history
-        const startBlock = Math.max(0, latestBlock - 200000);
 
         const collectLogs = async (filter) => {
           const logs = [];
@@ -498,18 +508,25 @@ export function useContract(signer, provider) {
                 chunkErr
               );
             }
+
+            // ✅ FIX: Small delay between chunks to avoid BSC rate limit
+            if (fromBlock + chunkSize < latestBlock) {
+              await new Promise((r) => setTimeout(r, 200));
+            }
           }
 
           return logs;
         };
 
-        const [stakedLogs, claimedLogs, withdrawnLogs, emergencyLogs] =
-          await Promise.all([
-            collectLogs(stakingReader.filters.UserStaked(filterAddress)),
-            collectLogs(stakingReader.filters.UserClaimed(filterAddress)),
-            collectLogs(stakingReader.filters.UserWithdrawn(filterAddress)),
-            collectLogs(stakingReader.filters.EmergencyWithdrawn(filterAddress)),
-          ]);
+        // ✅ FIX: SEQUENTIAL queries — one event type at a time to avoid rate limits
+        // Promise.all with 4 types × 100+ chunks = 400+ parallel calls = rate limited
+        const stakedLogs = await collectLogs(stakingReader.filters.UserStaked(filterAddress));
+        await new Promise((r) => setTimeout(r, 300));
+        const claimedLogs = await collectLogs(stakingReader.filters.UserClaimed(filterAddress));
+        await new Promise((r) => setTimeout(r, 300));
+        const withdrawnLogs = await collectLogs(stakingReader.filters.UserWithdrawn(filterAddress));
+        await new Promise((r) => setTimeout(r, 300));
+        const emergencyLogs = await collectLogs(stakingReader.filters.EmergencyWithdrawn(filterAddress));
 
         const allEvents = [];
 
@@ -521,10 +538,14 @@ export function useContract(signer, provider) {
             stakeIndex: null,
             planName: log.args?.planName ?? log.args?.[2] ?? "",
             amount: ethers.formatEther(log.args?.amount ?? log.args?.[3] ?? 0),
-            txHash: log.transactionHash || log.hash || log.log?.transactionHash || "",
-            blockNumber: Number(log.blockNumber),
-            logIndex: Number(log.index ?? log.logIndex ?? 0),
-            timestamp: await getBlockTimestamp(Number(log.blockNumber)),
+            txHash:
+              log.transactionHash ||
+              log.hash ||
+              log.log?.transactionHash ||
+              "",
+            blockNumber: Number(log.blockNumber || 0),
+            logIndex: Number(log.logIndex ?? log.index ?? 0),
+            timestamp: await getBlockTimestamp(Number(log.blockNumber || 0)),
           });
         }
 
@@ -536,10 +557,14 @@ export function useContract(signer, provider) {
             stakeIndex: Number(log.args?.stakeIndex ?? log.args?.[1] ?? 0),
             planName: "",
             amount: ethers.formatEther(log.args?.amount ?? log.args?.[2] ?? 0),
-            txHash: log.transactionHash || log.hash || log.log?.transactionHash || "",
-            blockNumber: Number(log.blockNumber),
-            logIndex: Number(log.index ?? log.logIndex ?? 0),
-            timestamp: await getBlockTimestamp(Number(log.blockNumber)),
+            txHash:
+              log.transactionHash ||
+              log.hash ||
+              log.log?.transactionHash ||
+              "",
+            blockNumber: Number(log.blockNumber || 0),
+            logIndex: Number(log.logIndex ?? log.index ?? 0),
+            timestamp: await getBlockTimestamp(Number(log.blockNumber || 0)),
           });
         }
 
@@ -553,10 +578,14 @@ export function useContract(signer, provider) {
             amount: ethers.formatEther(
               log.args?.principalReleased ?? log.args?.[2] ?? 0
             ),
-            txHash: log.transactionHash || log.hash || log.log?.transactionHash || "",
-            blockNumber: Number(log.blockNumber),
-            logIndex: Number(log.index ?? log.logIndex ?? 0),
-            timestamp: await getBlockTimestamp(Number(log.blockNumber)),
+            txHash:
+              log.transactionHash ||
+              log.hash ||
+              log.log?.transactionHash ||
+              "",
+            blockNumber: Number(log.blockNumber || 0),
+            logIndex: Number(log.logIndex ?? log.index ?? 0),
+            timestamp: await getBlockTimestamp(Number(log.blockNumber || 0)),
           });
         }
 
@@ -568,10 +597,14 @@ export function useContract(signer, provider) {
             stakeIndex: null,
             planName: "",
             amount: ethers.formatEther(log.args?.amount ?? log.args?.[2] ?? 0),
-            txHash: log.transactionHash || log.hash || log.log?.transactionHash || "",
-            blockNumber: Number(log.blockNumber),
-            logIndex: Number(log.index ?? log.logIndex ?? 0),
-            timestamp: await getBlockTimestamp(Number(log.blockNumber)),
+            txHash:
+              log.transactionHash ||
+              log.hash ||
+              log.log?.transactionHash ||
+              "",
+            blockNumber: Number(log.blockNumber || 0),
+            logIndex: Number(log.logIndex ?? log.index ?? 0),
+            timestamp: await getBlockTimestamp(Number(log.blockNumber || 0)),
           });
         }
 

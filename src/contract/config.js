@@ -11,11 +11,25 @@ Network
 -----------------------------------
 */
 export const CHAIN_ID = 56;
+
 export const RPC_URL =
   import.meta.env.VITE_BSC_MAINNET_RPC_URL ||
   "https://bsc-dataseed.binance.org/";
 
 export const BSCSCAN_BASE_URL = "https://bscscan.com";
+
+/*
+-----------------------------------
+Event Fetch Tuning (Mainnet Safe)
+-----------------------------------
+*/
+export const EVENTS_LOOKBACK_BLOCKS = Number(
+  import.meta.env.VITE_EVENTS_LOOKBACK_BLOCKS || 500000
+);
+
+export const EVENTS_CHUNK_SIZE = Number(
+  import.meta.env.VITE_EVENTS_CHUNK_SIZE || 4000
+);
 
 /*
 -----------------------------------
@@ -36,7 +50,11 @@ export const ADMIN_WALLET =
   deployed.Owner ||
   "0x4fd0dbfC59B4D1257aA1fA3EC0981C6Bee1be572";
 
-// ✅ All viewer wallets — read-only admin access
+/*
+-----------------------------------
+Viewer Wallets
+-----------------------------------
+*/
 export const VIEWER_WALLET =
   import.meta.env.VITE_VIEWER_WALLET ||
   "0xec23685c637C28dD17dC07E600575A1141E250c0";
@@ -48,7 +66,9 @@ export const VIEWER_WALLET_2 =
 export const VIEWER_WALLETS = [
   VIEWER_WALLET,
   VIEWER_WALLET_2,
-].map((addr) => addr.toLowerCase());
+]
+  .filter(Boolean)
+  .map((addr) => addr.toLowerCase());
 
 /*
 -----------------------------------
