@@ -34,12 +34,10 @@ function toNumber(value) {
   return str.startsWith("0x") ? parseInt(str, 16) : Number(str);
 }
 
-export function useContract(signer, provider) {
+export function useContract(signer) {
   const readProvider = useMemo(() => {
-    if (provider) return provider;
-    if (signer?.provider) return signer.provider;
-    return new ethers.JsonRpcProvider(RPC_URL);
-  }, [provider, signer]);
+  return new ethers.JsonRpcProvider(RPC_URL);
+}, []);
 
   const stakingReader = useMemo(() => {
     return readProvider

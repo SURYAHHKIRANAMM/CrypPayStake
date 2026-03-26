@@ -1300,13 +1300,14 @@ export default function UserDashboard({ account, signer, provider }) {
             <div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden">
               <div
                 className="grid gap-2 px-5 py-3 bg-gray-900 text-gray-400 text-xs font-semibold border-b border-gray-700"
-                style={{ gridTemplateColumns: "40px 70px 1fr 100px 90px 90px" }}
+                style={{ gridTemplateColumns: "40px 65px 1fr 95px 85px 100px 70px" }}
               >
                 <span>Sr.No</span>
                 <span>Type</span>
                 <span>Plan</span>
                 <span>Amount</span>
                 <span>Date</span>
+                <span>Tx Hash</span>
                 <span className="text-right">BscScan</span>
               </div>
 
@@ -1321,7 +1322,7 @@ export default function UserDashboard({ account, signer, provider }) {
                     key={`${txHash || "local"}-${event.blockNumber || 0}-${i}`}
                     className="grid gap-2 px-5 py-4 text-sm border-b border-gray-700/50 items-center"
                     style={{
-                      gridTemplateColumns: "40px 70px 1fr 100px 90px 90px",
+                      gridTemplateColumns: "40px 65px 1fr 95px 85px 100px 70px",
                     }}
                   >
                     <span className="text-gray-500 text-xs">{i + 1}</span>
@@ -1353,6 +1354,13 @@ export default function UserDashboard({ account, signer, provider }) {
 
                     <span className="text-gray-300 text-xs">
                       {fmtDate(event.timestamp)}
+                    </span>
+
+                    {/* ✅ Tx Hash Column */}
+                    <span className="text-gray-400 text-xs truncate font-mono" title={txHash || "—"}>
+                      {validTxHash
+                        ? `${txHash.slice(0, 6)}...${txHash.slice(-4)}`
+                        : "—"}
                     </span>
 
                     {validTxHash ? (
@@ -1390,12 +1398,13 @@ export default function UserDashboard({ account, signer, provider }) {
 
               <div
                 className="grid gap-2 px-5 py-3 bg-gray-900 text-xs font-bold border-t border-gray-700"
-                style={{ gridTemplateColumns: "40px 70px 1fr 100px 90px 90px" }}
+                style={{ gridTemplateColumns: "40px 65px 1fr 95px 85px 100px 70px" }}
               >
                 <span className="text-gray-400">Total</span>
                 <span className="text-gray-400">
                   {filteredHistoryEvents.length} events
                 </span>
+                <span></span>
                 <span></span>
                 <span></span>
                 <span></span>
