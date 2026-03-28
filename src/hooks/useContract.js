@@ -617,6 +617,26 @@ export function useContract(signer) {
 
         const allEvents = [];
 
+        // ✅ FIX: Quick test — try ONE BscScan API call first, skip to fallback if it fails
+        let bscscanWorks = false;
+        try {
+          const testParams = new URLSearchParams({
+            module: "logs",
+            action: "getLogs",
+            fromBlock: String(latestBlock - 100),
+            toBlock: String(latestBlock),
+            address: CONTRACT_ADDRESS,
+            topic0: iface.getEvent("UserStaked").topicHash,
+          });
+          if (apiKey) testParams.set("apikey", apiKey);
+          const testRes = await fetch(`${apiBase}?${testParams.toString()}`);
+          const testData = await testRes.json();
+          bscscanWorks = testData?.status === "1" || (testData?.status === "0" && testData?.message === "No records found");
+        } catch {
+          bscscanWorks = false;
+        }
+
+        if (bscscanWorks) {
         for (const meta of eventMeta) {
           const eventFragment = iface.getEvent(meta.name);
           const topic0 = eventFragment.topicHash;
@@ -684,8 +704,10 @@ export function useContract(signer) {
 
           return allEvents;
         }
+        } // end if (bscscanWorks)
 
         // ─── Fallback: on-chain queryFilter ─────────────────────────────
+        console.log("Using on-chain queryFilter fallback...");
         const blockCache = new Map();
 
         const getBlockTimestamp = async (blockNumber) => {
